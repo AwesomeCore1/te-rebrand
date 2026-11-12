@@ -7,10 +7,13 @@
 //! so the logic can be tested without running the game.
 
 pub mod replay;
+pub mod scs;
 pub mod source;
 pub mod tracker;
 pub mod units;
 pub mod upload;
+#[cfg(windows)]
+mod win;
 
 pub use tracker::{JobEvent, JobTracker};
 

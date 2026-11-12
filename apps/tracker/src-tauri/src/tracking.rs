@@ -70,6 +70,8 @@ pub struct Status {
     pub linked: bool,
     pub driver_name: Option<String>,
     pub game: Option<Game>,
+    /// The game seems to be running but can't be read (wrong plugin version).
+    pub game_problem: Option<String>,
     pub current_job: Option<JobInfo>,
     pub queued: usize,
     pub last_result: Option<String>,
@@ -87,6 +89,7 @@ struct Inner {
     auth: Option<Auth>,
     queue: Vec<JobUpload>,
     game: Option<Game>,
+    game_problem: Option<String>,
     current_job: Option<JobInfo>,
     last_result: Option<String>,
     last_error: Option<String>,
@@ -112,6 +115,7 @@ impl Tracker {
             auth: store.load_auth(),
             queue: store.load_queue(),
             game: None,
+            game_problem: None,
             current_job: None,
             last_result: None,
             last_error: None,
@@ -133,6 +137,7 @@ impl Tracker {
             linked: i.auth.is_some(),
             driver_name: i.auth.as_ref().map(|a| a.driver_name.clone()),
             game: i.game,
+            game_problem: i.game_problem.clone(),
             current_job: i.current_job.clone(),
             queued: i.queue.len(),
             last_result: i.last_result.clone(),
@@ -185,7 +190,7 @@ impl Tracker {
                 if source.is_finished() {
                     break;
                 }
-                self.set_game(None, None).await;
+                self.set_game(None, None, source.problem()).await;
                 continue;
             };
 
@@ -197,7 +202,7 @@ impl Tracker {
                     queued_any = true;
                 }
             }
-            self.set_game(Some(frame.game), tracker.current_job().cloned())
+            self.set_game(Some(frame.game), tracker.current_job().cloned(), None)
                 .await;
             if queued_any {
                 tokio::spawn(self.clone().flush());
@@ -208,15 +213,17 @@ impl Tracker {
                 tokio::spawn(self.clone().send_position(position(&frame, &clock)));
             }
         }
-        self.set_game(None, None).await;
+        self.set_game(None, None, None).await;
     }
 
-    async fn set_game(&self, game: Option<Game>, job: Option<JobInfo>) {
+    async fn set_game(&self, game: Option<Game>, job: Option<JobInfo>, problem: Option<&str>) {
         let changed = {
             let mut i = self.inner.lock().await;
-            let changed = i.game != game || i.current_job != job;
+            let changed =
+                i.game != game || i.current_job != job || i.game_problem.as_deref() != problem;
             i.game = game;
             i.current_job = job;
+            i.game_problem = problem.map(str::to_owned);
             changed
         };
         if changed {

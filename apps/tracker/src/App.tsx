@@ -9,6 +9,7 @@ type Status = {
   linked: boolean;
   driver_name: string | null;
   game: "ets2" | "ats" | null;
+  game_problem: string | null;
   current_job: { source_city: string; destination_city: string; cargo: string } | null;
   queued: number;
   last_result: string | null;
@@ -91,6 +92,11 @@ export default function App() {
       <section>
         <h2>Game</h2>
         <p>{status.game ? GAME_NAMES[status.game] : "Waiting for ETS2 or ATS to start."}</p>
+        {status.game_problem && (
+          <p role="alert" className="error">
+            {status.game_problem}
+          </p>
+        )}
         {status.current_job && (
           <p>
             Current job: {status.current_job.source_city} to {status.current_job.destination_city},{" "}

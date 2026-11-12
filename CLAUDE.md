@@ -34,6 +34,7 @@ The tracker needs Rust (rustup) and the Tauri prerequisites: https://tauri.app/s
 - **The tracker never decides what counts.** It sends raw finished jobs; the API validates them (TruckersMP membership, plausible speed/distance) and computes ranks and goals.
 - **Shared types:** job payloads the tracker sends are defined once (Zod in TS, serde in Rust) and must match. If you change `FinishedJob` in `crates/telemetry/src/tracker.rs`, change the Zod schema too.
 - **Game telemetry is Windows-only** (shared memory from the RenCloud scs-sdk-plugin). On macOS, build and test with the replay source and `crates/telemetry/tests/fixtures/*.jsonl`.
+- **The plugin version is pinned:** revision 12, release V.1.12.1. The memory layout changes between plugin revisions; `crates/telemetry/src/scs.rs` holds the offsets and says how they were checked. Ship that DLL and no other.
 - Use Bun, not npm or yarn.
 
 ## Design work
@@ -53,12 +54,11 @@ npx skills@latest add emilkowalski/skills
 
 ## Next steps (in order)
 
-Done: Discord login + Steam OpenID link (`apps/web/src/lib/steam.ts`), Prisma schema (`packages/db/prisma/schema/platform.prisma`), company-scoping middleware (`companyProcedure` in `packages/api/src/index.ts`), tracker REST API (`apps/web/src/routes/api/tracker/*`, logic in `packages/api/src/tracker.ts`) with device-code pairing and hashed device tokens, Zod payloads in `packages/telemetry-types` (Rust mirror: `crates/telemetry/src/upload.rs`, both tested against `tests/fixtures/job-upload.json`). Tracker app: linking, token + offline queue (`src-tauri/src/store.rs`), uploads and positions (`src-tauri/src/tracking.rs`), dev replay through the real pipeline. First job saved end to end via replay on 2026-11-12.
+Done: Discord login + Steam OpenID link (`apps/web/src/lib/steam.ts`), Prisma schema (`packages/db/prisma/schema/platform.prisma`), company-scoping middleware (`companyProcedure` in `packages/api/src/index.ts`), tracker REST API (`apps/web/src/routes/api/tracker/*`, logic in `packages/api/src/tracker.ts`) with device-code pairing and hashed device tokens, Zod payloads in `packages/telemetry-types` (Rust mirror: `crates/telemetry/src/upload.rs`, both tested against `tests/fixtures/job-upload.json`). Tracker app: linking, token + offline queue (`src-tauri/src/store.rs`), uploads and positions (`src-tauri/src/tracking.rs`), dev replay through the real pipeline. First job saved end to end via replay on 2026-11-12. Live game source: `SharedMemorySource` (`crates/telemetry/src/source.rs`, decoding in `scs.rs`, Win32 calls in `win.rs`), with TruckersMP detection (`Frame.multiplayer`); tested against a stand-in memory map, not yet against the real game.
 
 Note: ETS2/ATS road distances are map-scaled (about 1:19 / 1:20), so odometer km per real hour is far above the speedometer. Plausibility checks must account for this (see `flagReasons`).
 
-1. `SharedMemorySource` in `crates/telemetry/src/source.rs` (Windows), pinned to one RenCloud plugin version.
-   Also set `Frame.multiplayer` (TruckersMP detection) there.
+1. Check `SharedMemorySource` against the real game: put the plugin DLL in the game's `bin/win_x64/plugins`, run `cargo run -p te-telemetry --example watch`, and do one delivery in singleplayer and one on TruckersMP. Record one with `--record` as a fixture.
 2. Tray icon (the app should live in the system tray, window on click) and plugin install into each game's `bin/win_x64/plugins`.
 3. Website pages still to build in the new style: company page (`/vtc/<slug>`), live map, the new-driver dashboard state (all in Figma). Restyle the tracker app to match.
 4. TruckersMP membership check (nightly job + on join), then ranks, Discord bot, live map (WebSocket), goals.

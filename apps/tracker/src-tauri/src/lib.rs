@@ -109,7 +109,7 @@ pub fn run() {
             // The game: shared memory from the RenCloud plugin (Windows only).
             #[cfg(windows)]
             tauri::async_runtime::spawn(tracker.clone().run_source(
-                Box::new(te_telemetry::source::SharedMemorySource),
+                Box::new(te_telemetry::source::SharedMemorySource::new()),
                 tracking::Clock::live(),
                 Duration::from_millis(250),
             ));

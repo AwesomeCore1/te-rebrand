@@ -91,8 +91,17 @@ impl JobTracker {
         }
 
         match (&mut self.active, &frame.job) {
-            // A new job appeared.
-            (None, Some(job)) => {
+            // Driving with the job we are tracking: keep stats up to date.
+            (Some(active), Some(job)) if active.game == frame.game && active.job == *job => {
+                if !frame.paused && frame.speed_ms > active.max_speed_ms {
+                    active.max_speed_ms = frame.speed_ms;
+                }
+            }
+            // A new job appeared. If another one was being tracked, it ended
+            // without an event (the driver switched profile or game), so
+            // nothing is known about how it ended: drop it rather than let
+            // the new job's delivery close it.
+            (_, Some(job)) => {
                 self.active = Some(Active {
                     game: frame.game,
                     job: job.clone(),
@@ -105,12 +114,6 @@ impl JobTracker {
                     job: job.clone(),
                     at_ms: frame.t_ms,
                 });
-            }
-            // Driving with a job: keep stats up to date.
-            (Some(active), Some(_)) => {
-                if !frame.paused && frame.speed_ms > active.max_speed_ms {
-                    active.max_speed_ms = frame.speed_ms;
-                }
             }
             // The job vanished without a gameplay event (game closed, profile switched).
             // Keep it: the next delivered/cancelled event will close it.
@@ -141,6 +144,30 @@ mod tests {
         assert!((job.driven_km - 1196.0).abs() < 0.01);
         assert!((job.max_speed_kmh - 90.0).abs() < 0.01);
         assert!(tracker.current_job().is_none());
+    }
+
+    #[test]
+    fn a_different_job_replaces_the_one_that_never_ended() {
+        let frames = replay::parse(include_str!("../tests/fixtures/hamburg-lyon.jsonl")).unwrap();
+        let mut tracker = JobTracker::new();
+        tracker.push(&frames[1]); // Hamburg to Lyon starts at 50,210 km
+
+        // Another profile: a different job, a different truck.
+        let mut other = frames[2].clone();
+        other.odometer_km = 9_000.0;
+        other.job.as_mut().unwrap().destination_city = "Oslo".to_owned();
+        let events = tracker.push(&other);
+        assert!(matches!(events.as_slice(), [JobEvent::Started { .. }]));
+
+        let mut delivered = frames[4].clone();
+        delivered.odometer_km = 9_450.0;
+        let events = tracker.push(&delivered);
+        let [JobEvent::Finished(job)] = events.as_slice() else {
+            panic!("expected one finished job, got {events:?}");
+        };
+        assert_eq!(job.job.destination_city, "Oslo");
+        assert_eq!(job.odometer_start_km, 9_000.0);
+        assert_eq!(job.driven_km, 450.0);
     }
 
     #[test]

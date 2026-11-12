@@ -13,6 +13,19 @@ The API URL comes from `TACHO_API_URL` (at runtime, else at build time), default
 
 On macOS there is no game telemetry. Use **Link account**, approve the code on the website, then **Replay a delivery**: the recorded Hamburg to Lyon drive goes through the real pipeline and appears on your dashboard.
 
+## The game (Windows)
+
+The tracker reads the memory map of the RenCloud scs-sdk-plugin, revision 12 (release [V.1.12.1](https://github.com/RenCloud/scs-sdk-plugin/releases/tag/V.1.12.1)). Other revisions are refused, and the window says so. Until the tracker installs the plugin itself, copy `Win64/scs-telemetry.dll` from that release into the game's `bin/win_x64/plugins` folder (create `plugins` if it is missing) and accept the SDK notice when the game starts.
+
+To see what the tracker reads without the app or an account:
+
+```bash
+cargo run -p te-telemetry --example watch                       # job events, and a line every 5 s
+cargo run -p te-telemetry --example watch -- --record drive.jsonl  # also save every frame, for a fixture
+```
+
+A job counts as TruckersMP when TruckersMP's DLL (`core_ets2mp.dll`, `core_atsmp.dll`) is loaded in the game. If the game runs as administrator and the tracker does not, that can't be seen and the job is sent as singleplayer.
+
 ## Files on disk
 
 In the app data folder (macOS `~/Library/Application Support/app.tacho.tracker`, Windows `%APPDATA%\app.tacho.tracker`):
