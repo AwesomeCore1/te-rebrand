@@ -1,0 +1,20 @@
+{
+  "name": "@te-rebrand/auth",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@te-rebrand/db": "workspace:*",
+    "better-auth": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@te-rebrand/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,38 @@
+:root {
+  font-family: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  color: #eceef1;
+  background: #0e1014;
+  font-variant-numeric: tabular-nums;
+}
+.container {
+  padding: 32px;
+  max-width: 720px;
+}
+button {
+  background: #f5a524;
+  color: #1a1204;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:active {
+  transform: scale(0.97);
+}
+
+section {
+  margin: 1.5rem 0;
+}
+
+.code {
+  font-family: ui-monospace, monospace;
+  font-size: 2rem;
+  letter-spacing: 0.15em;
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  color: #f0605d;
+}

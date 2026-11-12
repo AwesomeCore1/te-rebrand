@@ -1,0 +1,63 @@
+{
+  "name": "te-rebrand",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "zod": "^4.5.4",
+      "typescript": "^6.0.3",
+      "varlock": "1.23.0",
+      "next-themes": "^0.4.6",
+      "sonner": "^2.0.8",
+      "tailwindcss": "^4.3.3",
+      "@prisma/client": "^7.10.0",
+      "@trpc/server": "^11.19.0",
+      "@trpc/client": "^11.19.0",
+      "better-auth": "1.7.12"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "dev:web": "turbo run dev -F web --",
+    "dev:tracker": "bun run --cwd apps/tracker tauri dev",
+    "build:tracker": "bun run --cwd apps/tracker tauri build",
+    "db:push": "turbo run db:push -F @te-rebrand/db --",
+    "db:studio": "turbo run db:studio -F @te-rebrand/db --",
+    "db:generate": "turbo run db:generate -F @te-rebrand/db --",
+    "db:migrate": "turbo run db:migrate -F @te-rebrand/db --",
+    "db:start": "docker compose up -d postgres",
+    "db:watch": "docker compose up postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:down": "docker compose down postgres",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/",
+    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/ && bun run --cwd packages/db db:generate",
+    "auth:generate": "cd apps/web && bun run auth:generate",
+    "check": "oxlint && oxfmt --write",
+    "test:rust": "cargo test --workspace --exclude tracker",
+    "check:rust": "cargo clippy --workspace --all-targets && cargo fmt --all --check",
+    "db:seed": "bun run --cwd packages/db db:seed"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@te-rebrand/config": "workspace:*",
+    "@types/node": "^26.4.1",
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.87.0",
+    "turbo": "^2.11.7",
+    "typescript": "catalog:",
+    "varlock": "catalog:"
+  },
+  "packageManager": "bun@1.4.4"
+}

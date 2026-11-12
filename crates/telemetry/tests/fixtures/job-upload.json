@@ -1,0 +1,27 @@
+{
+  "client_job_id": "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+  "started_at": "2026-11-12T18:00:00Z",
+  "finished_at": "2026-11-12T19:05:00Z",
+  "multiplayer": true,
+  "job": {
+    "game": "ets2",
+    "job": {
+      "source_city": "Hamburg",
+      "destination_city": "Lyon",
+      "source_company": "Krone Logistics",
+      "destination_company": "TREE-ET",
+      "cargo": "Electronics",
+      "cargo_mass_kg": 18400.0,
+      "planned_distance_km": 1196.0,
+      "income": 52400
+    },
+    "status": "delivered",
+    "driven_km": 1196.0,
+    "odometer_start_km": 50210.0,
+    "odometer_end_km": 51406.0,
+    "max_speed_kmh": 90.0,
+    "cargo_damage": 0.02,
+    "started_at_ms": 1000,
+    "finished_at_ms": 3901000
+  }
+}

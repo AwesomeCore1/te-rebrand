@@ -1,0 +1,209 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@source "../../../apps/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Tacho tokens (DESIGN.md). Warm cream pages, warm near-black ink, one amber
+   signal colour. Distances and data get colour; decoration doesn't. */
+:root {
+  --background: #f6f1e9;
+  --foreground: #1d1712;
+  --card: #fffdf9;
+  --card-foreground: #1d1712;
+  --popover: #fffdf9;
+  --popover-foreground: #1d1712;
+  /* Primary action: amber fill, dark text. */
+  --primary: #f5a524;
+  --primary-foreground: #1a1204;
+  --secondary: #efe7db;
+  --secondary-foreground: #2a221b;
+  --muted: #efe7db;
+  --muted-foreground: #675d54;
+  --accent: #efe7db;
+  --accent-foreground: #1d1712;
+  --destructive: #c23b37;
+  --border: #e3d9cb;
+  --input: #ddd2c2;
+  --ring: #c77d0a;
+  /* Amber as text or icons on cream (4.5:1). */
+  --signal-ink: #9a5200;
+  --success: #1e7d4b;
+  --success-bg: #e3f2e8;
+  --game-ets2: #2f63c4;
+  --game-ets2-bg: #e4ecfa;
+  --game-ats: #137a6d;
+  --game-ats-bg: #def3ef;
+  --discord: #5865f2;
+  /* The dark hero and bands. */
+  --night: #120c07;
+  --night-2: #2a1709;
+  --chart-1: #f5a524;
+  --chart-2: #9a5200;
+  --chart-3: #2f63c4;
+  --chart-4: #137a6d;
+  --chart-5: #675d54;
+  --radius: 0.75rem;
+  --sidebar: #fffdf9;
+  --sidebar-foreground: #1d1712;
+  --sidebar-primary: #f5a524;
+  --sidebar-primary-foreground: #1a1204;
+  --sidebar-accent: #efe7db;
+  --sidebar-accent-foreground: #1d1712;
+  --sidebar-border: #e3d9cb;
+  --sidebar-ring: #c77d0a;
+  /* Landing surfaces that change with the theme. */
+  --panel-from: #fbf4e8;
+  --panel-to: #f3e2c7;
+  --panel-glow: rgba(245, 165, 36, 0.3);
+  --row-highlight: #fdf3e1;
+  --float-shadow: 0 18px 40px rgba(90, 52, 10, 0.14);
+  --drum-idle: #b9ada0;
+  --discord-chip-bg: #eef0fe;
+  --discord-chip-fg: #3c45a5;
+  --hero-fade: #efc48a;
+  color-scheme: light;
+}
+
+/* Dark theme: the same warm palette at night. Amber stays the one signal. */
+.dark {
+  --background: #120d0a;
+  --foreground: #f3ece2;
+  --card: #1b1511;
+  --card-foreground: #f3ece2;
+  --popover: #1b1511;
+  --popover-foreground: #f3ece2;
+  --primary: #f5a524;
+  --primary-foreground: #1a1204;
+  --secondary: #261d17;
+  --secondary-foreground: #ece4d8;
+  --muted: #261d17;
+  --muted-foreground: #a99d8f;
+  --accent: #261d17;
+  --accent-foreground: #f3ece2;
+  --destructive: #ef6b66;
+  --border: #33291f;
+  --input: #3d3127;
+  --ring: #f5a524;
+  --signal-ink: #f5b04a;
+  --success: #5fd394;
+  --success-bg: #123222;
+  --game-ets2: #8ab6ff;
+  --game-ets2-bg: #14243d;
+  --game-ats: #5fd6c4;
+  --game-ats-bg: #11302c;
+  --chart-2: #f5b04a;
+  --chart-5: #a99d8f;
+  --sidebar: #1b1511;
+  --sidebar-foreground: #f3ece2;
+  --sidebar-accent: #261d17;
+  --sidebar-accent-foreground: #f3ece2;
+  --sidebar-border: #33291f;
+  --sidebar-ring: #f5a524;
+  --panel-from: #1f1711;
+  --panel-to: #2b1d11;
+  --panel-glow: rgba(245, 165, 36, 0.2);
+  --row-highlight: #30230f;
+  --float-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --drum-idle: #54483d;
+  --discord-chip-bg: #1f2248;
+  --discord-chip-fg: #b3b9ff;
+  --hero-fade: #5a3010;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo Variable", "Public Sans Variable", ui-sans-serif, sans-serif;
+  --color-signal-ink: var(--signal-ink);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-game-ets2: var(--game-ets2);
+  --color-game-ets2-bg: var(--game-ets2-bg);
+  --color-game-ats: var(--game-ats);
+  --color-game-ats-bg: var(--game-ats-bg);
+  --color-discord: var(--discord);
+  --color-night: var(--night);
+  --color-night-2: var(--night-2);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply font-sans bg-background text-foreground antialiased;
+    transition:
+      background-color 0.2s ease-out,
+      color 0.2s ease-out;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Numbers in stats, tables and leaderboards line up. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

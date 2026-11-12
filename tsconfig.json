@@ -1,0 +1,3 @@
+{
+  "extends": "@te-rebrand/config/tsconfig.base.json"
+}

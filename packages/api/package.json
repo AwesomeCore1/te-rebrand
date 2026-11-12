@@ -1,0 +1,26 @@
+{
+  "name": "@te-rebrand/api",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@te-rebrand/auth": "workspace:*",
+    "@te-rebrand/db": "workspace:*",
+    "@te-rebrand/telemetry-types": "workspace:*",
+    "@te-rebrand/truckersmp": "workspace:*",
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@te-rebrand/config": "workspace:*",
+    "@types/bun": "latest",
+    "typescript": "catalog:"
+  }
+}

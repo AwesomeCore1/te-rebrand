@@ -1,0 +1,244 @@
+// Domain tables from docs/PLAN.md ("Data model").
+// Distances are always km. Every company-owned table has companyId.
+
+enum UnitPreference {
+  km
+  mi
+}
+
+enum Game {
+  ets2
+  ats
+}
+
+enum MembershipRole {
+  owner
+  manager
+  driver
+}
+
+enum MembershipStatus {
+  pending
+  active
+  inactive // left the VTC on TruckersMP (nightly check)
+  left
+  removed
+}
+
+enum ApplicationStatus {
+  pending
+  accepted
+  rejected
+  withdrawn
+}
+
+enum JobStatus {
+  delivered
+  cancelled
+  flagged
+}
+
+enum GoalMetric {
+  km
+  jobs
+  income
+}
+
+/// One profile per person, shared across companies.
+model Driver {
+  id             String         @id @default(cuid())
+  userId         String         @unique
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String
+  steamId64      String?        @unique
+  truckersmpId   Int?           @unique
+  unitPreference UnitPreference @default(km)
+  showOnLiveMap  Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  memberships     Membership[]
+  applications    Application[]
+  jobs            Job[]
+  trackerDevices  TrackerDevice[]
+  trackerPairings TrackerPairing[]
+
+  @@map("driver")
+}
+
+/// One row per VTC on the platform.
+/// Convoys and events live on TruckersMP; we show the VTC's events by
+/// truckersmpVtcId (packages/truckersmp) and store none of our own.
+model Company {
+  id              String    @id @default(cuid())
+  name            String
+  slug            String    @unique
+  tag             String?
+  logoUrl         String?
+  truckersmpVtcId Int?      @unique
+  verifiedAt      DateTime?
+  discordGuildId  String?
+  /// Discord channel ids, recruitment questions and other per-company settings.
+  settings        Json      @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  memberships  Membership[]
+  applications Application[]
+  ranks        Rank[]
+  jobs         Job[]
+  goals        Goal[]
+
+  @@map("company")
+}
+
+/// Who is in which company. History is kept when someone leaves.
+model Membership {
+  id             String           @id @default(cuid())
+  companyId      String
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId       String
+  driver         Driver           @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  role           MembershipRole   @default(driver)
+  status         MembershipStatus @default(active)
+  joinedAt       DateTime         @default(now())
+  leftAt         DateTime?
+  lastVtcCheckAt DateTime?
+
+  @@index([companyId, status])
+  @@index([driverId, status])
+  @@map("membership")
+}
+
+model Application {
+  id        String            @id @default(cuid())
+  companyId String
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId  String
+  driver    Driver            @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  answers   Json              @default("{}")
+  status    ApplicationStatus @default(pending)
+  createdAt DateTime          @default(now())
+  decidedAt DateTime?
+
+  @@index([companyId, status])
+  @@map("application")
+}
+
+model Rank {
+  id            String  @id @default(cuid())
+  companyId     String
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name          String
+  minKm         Float
+  color         String?
+  discordRoleId String?
+
+  @@unique([companyId, name])
+  @@index([companyId, minKm])
+  @@map("rank")
+}
+
+/// Counts for the company the driver was in when the job finished.
+model Job {
+  id            String         @id @default(cuid())
+  driverId      String
+  driver        Driver         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  companyId     String?
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  deviceId      String?
+  device        TrackerDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  /// Id the tracker generated, so a retried upload never creates a second row.
+  clientJobId   String
+  game          Game
+  multiplayer   Boolean        @default(false)
+  sourceCity    String
+  sourceCompany String
+  destCity      String
+  destCompany   String
+  cargo         String
+  cargoMassKg   Float
+  plannedKm     Float
+  drivenKm      Float
+  odometerStart Float
+  odometerEnd   Float
+  /// In the game's currency: EUR for ETS2, USD for ATS.
+  income        Int
+  damagePct     Float
+  maxSpeedKmh   Float
+  startedAt     DateTime
+  finishedAt    DateTime
+  status        JobStatus
+  /// Why the API flagged the job, if it did.
+  flagReasons   String[]       @default([])
+  createdAt     DateTime       @default(now())
+
+  events JobEvent[]
+
+  @@unique([driverId, clientJobId])
+  @@index([companyId, finishedAt])
+  @@index([driverId, finishedAt])
+  @@map("job")
+}
+
+model JobEvent {
+  id      String   @id @default(cuid())
+  jobId   String
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type    String
+  at      DateTime
+  payload Json     @default("{}")
+
+  @@index([jobId])
+  @@map("job_event")
+}
+
+model Goal {
+  id        String     @id @default(cuid())
+  companyId String
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title     String
+  metric    GoalMetric
+  target    Float
+  startAt   DateTime
+  endAt     DateTime
+
+  @@index([companyId, endAt])
+  @@map("goal")
+}
+
+/// One per installed tracker, so a token can be revoked.
+model TrackerDevice {
+  id         String    @id @default(cuid())
+  driverId   String
+  driver     Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  name       String
+  /// sha256 of the bearer token. The token itself is never stored.
+  tokenHash  String    @unique
+  appVersion String?
+  lastSeenAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  jobs Job[]
+
+  @@index([driverId])
+  @@map("tracker_device")
+}
+
+/// Short-lived pairing between the tracker app and a logged-in browser
+/// (device-code flow: the app polls with deviceCode, the driver approves userCode).
+model TrackerPairing {
+  id             String    @id @default(cuid())
+  deviceCodeHash String    @unique
+  userCode       String    @unique
+  deviceName     String
+  appVersion     String?
+  driverId       String?
+  driver         Driver?   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  approvedAt     DateTime?
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+
+  @@map("tracker_pairing")
+}

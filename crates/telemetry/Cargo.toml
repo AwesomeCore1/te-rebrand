@@ -1,0 +1,11 @@
+[package]
+name = "te-telemetry"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Reads ETS2/ATS telemetry and turns it into job events. No UI, no network."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

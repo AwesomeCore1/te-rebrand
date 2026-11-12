@@ -1,0 +1,40 @@
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/public-sans";
+@import "@te-rebrand/ui/globals.css";
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Nav links: on hover a 1px underline draws in from the left; on leaving it
+   retracts out to the right. Also shown for keyboard focus and the current page. */
+.nav-link {
+  color: rgb(236 228 216 / 0.86);
+  transition: color 0.3s;
+}
+.nav-link:hover,
+.nav-link:focus-visible,
+.nav-link[aria-current="page"] {
+  color: #fff;
+}
+.nav-link-label {
+  position: relative;
+}
+.nav-link-label::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -5px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: 100% 50%;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nav-link:hover .nav-link-label::after,
+.nav-link:focus-visible .nav-link-label::after,
+.nav-link[aria-current="page"] .nav-link-label::after {
+  transform: scaleX(1);
+  transform-origin: 0% 50%;
+  transition-duration: 0.14s;
+}
