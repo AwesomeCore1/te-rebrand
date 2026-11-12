@@ -8,6 +8,7 @@
     "dev": "vite dev",
     "check-types": "vite build && tsc --noEmit",
     "env:generate": "varlock codegen",
+    "dev:session": "bun scripts/dev-session.ts",
     "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/prisma/schema/auth.prisma --yes"
   },
   "dependencies": {

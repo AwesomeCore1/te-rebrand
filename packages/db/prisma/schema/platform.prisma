@@ -88,6 +88,7 @@ model Company {
   ranks        Rank[]
   jobs         Job[]
   goals        Goal[]
+  outbox       OutboxEvent[]
 
   @@map("company")
 }
@@ -205,6 +206,22 @@ model Goal {
 
   @@index([companyId, endAt])
   @@map("goal")
+}
+
+/// Things that happened which the Discord bot posts about. The API writes a
+/// row; apps/bot reads unprocessed rows, oldest first, and marks them done.
+/// Payload shapes: packages/api/src/outbox.ts.
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type        String
+  payload     Json
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([processedAt, createdAt])
+  @@map("outbox_event")
 }
 
 /// One per installed tracker, so a token can be revoked.

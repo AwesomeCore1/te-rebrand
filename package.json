@@ -45,7 +45,8 @@
     "check": "oxlint && oxfmt --write",
     "test:rust": "cargo test --workspace --exclude tracker",
     "check:rust": "cargo clippy --workspace --all-targets && cargo fmt --all --check",
-    "db:seed": "bun run --cwd packages/db db:seed"
+    "db:seed": "bun run --cwd packages/db db:seed",
+    "dev:session": "bun run --cwd apps/web dev:session"
   },
   "dependencies": {
     "zod": "catalog:"
