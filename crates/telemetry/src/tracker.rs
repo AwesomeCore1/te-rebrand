@@ -64,6 +64,13 @@ impl JobTracker {
         self.active.as_ref().map(|a| &a.job)
     }
 
+    /// Distance driven on the current job so far, given the odometer now.
+    pub fn driven_km(&self, odometer_km: f64) -> Option<f64> {
+        self.active
+            .as_ref()
+            .map(|a| (odometer_km - a.odometer_start_km).max(0.0))
+    }
+
     pub fn push(&mut self, frame: &Frame) -> Vec<JobEvent> {
         let mut events = Vec::new();
 
@@ -136,6 +143,7 @@ mod tests {
         let events: Vec<_> = frames.iter().flat_map(|f| tracker.push(f)).collect();
 
         assert!(matches!(events.first(), Some(JobEvent::Started { .. })));
+        assert_eq!(tracker.driven_km(0.0), None, "no job after the delivery");
         let Some(JobEvent::Finished(job)) = events.last() else {
             panic!("expected a finished job, got {events:?}");
         };
@@ -151,6 +159,7 @@ mod tests {
         let frames = replay::parse(include_str!("../tests/fixtures/hamburg-lyon.jsonl")).unwrap();
         let mut tracker = JobTracker::new();
         tracker.push(&frames[1]); // Hamburg to Lyon starts at 50,210 km
+        assert_eq!(tracker.driven_km(50_600.0), Some(390.0));
 
         // Another profile: a different job, a different truck.
         let mut other = frames[2].clone();

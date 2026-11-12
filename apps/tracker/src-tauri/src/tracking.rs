@@ -17,6 +17,8 @@ use crate::api::{Api, ApiError, PairPoll};
 use crate::store::{Auth, Store};
 
 const POSITION_EVERY: Duration = Duration::from_secs(5);
+/// How often the window gets fresh speed and distance readings.
+const LIVE_EVERY: Duration = Duration::from_secs(1);
 pub const FLUSH_EVERY: Duration = Duration::from_secs(30);
 
 /// Maps a frame's `t_ms` (ms since the source started) to wall-clock time.
@@ -73,10 +75,32 @@ pub struct Status {
     /// The game seems to be running but can't be read (wrong plugin version).
     pub game_problem: Option<String>,
     pub current_job: Option<JobInfo>,
+    /// Readings from the running game, refreshed about once a second.
+    pub live: Option<Live>,
     pub queued: usize,
     pub last_result: Option<String>,
     pub last_error: Option<String>,
     pub pairing: Option<PairingStatus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Live {
+    pub speed_kmh: f64,
+    /// On the current job, since the tracker picked it up.
+    pub driven_km: Option<f64>,
+    /// 0.0 to 1.0.
+    pub cargo_damage: f64,
+    pub paused: bool,
+    pub multiplayer: bool,
+}
+
+/// What the tracking loop knows about the game right now.
+#[derive(Default)]
+struct GameState<'a> {
+    game: Option<Game>,
+    problem: Option<&'a str>,
+    job: Option<JobInfo>,
+    live: Option<Live>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +115,8 @@ struct Inner {
     game: Option<Game>,
     game_problem: Option<String>,
     current_job: Option<JobInfo>,
+    live: Option<Live>,
+    live_sent: Option<Instant>,
     last_result: Option<String>,
     last_error: Option<String>,
     pairing: Option<PairingStatus>,
@@ -117,6 +143,8 @@ impl Tracker {
             game: None,
             game_problem: None,
             current_job: None,
+            live: None,
+            live_sent: None,
             last_result: None,
             last_error: None,
             pairing: None,
@@ -139,6 +167,7 @@ impl Tracker {
             game: i.game,
             game_problem: i.game_problem.clone(),
             current_job: i.current_job.clone(),
+            live: i.live,
             queued: i.queue.len(),
             last_result: i.last_result.clone(),
             last_error: i.last_error.clone(),
@@ -190,7 +219,11 @@ impl Tracker {
                 if source.is_finished() {
                     break;
                 }
-                self.set_game(None, None, source.problem()).await;
+                self.set_game(GameState {
+                    problem: source.problem(),
+                    ..GameState::default()
+                })
+                .await;
                 continue;
             };
 
@@ -202,8 +235,19 @@ impl Tracker {
                     queued_any = true;
                 }
             }
-            self.set_game(Some(frame.game), tracker.current_job().cloned(), None)
-                .await;
+            self.set_game(GameState {
+                game: Some(frame.game),
+                problem: None,
+                job: tracker.current_job().cloned(),
+                live: Some(Live {
+                    speed_kmh: units::ms_to_kmh(frame.speed_ms).abs(),
+                    driven_km: tracker.driven_km(frame.odometer_km),
+                    cargo_damage: frame.cargo_damage,
+                    paused: frame.paused,
+                    multiplayer: frame.multiplayer,
+                }),
+            })
+            .await;
             if queued_any {
                 tokio::spawn(self.clone().flush());
             }
@@ -213,18 +257,31 @@ impl Tracker {
                 tokio::spawn(self.clone().send_position(position(&frame, &clock)));
             }
         }
-        self.set_game(None, None, None).await;
+        self.set_game(GameState::default()).await;
     }
 
-    async fn set_game(&self, game: Option<Game>, job: Option<JobInfo>, problem: Option<&str>) {
+    /// Stores the game's state and tells the window when it changed. Speed
+    /// and distance change on every frame, so those alone are sent at most
+    /// once per [`LIVE_EVERY`].
+    async fn set_game(&self, state: GameState<'_>) {
         let changed = {
             let mut i = self.inner.lock().await;
-            let changed =
-                i.game != game || i.current_job != job || i.game_problem.as_deref() != problem;
-            i.game = game;
-            i.current_job = job;
-            i.game_problem = problem.map(str::to_owned);
-            changed
+            let changed = i.game != state.game
+                || i.current_job != state.job
+                || i.game_problem.as_deref() != state.problem
+                || i.live.is_some() != state.live.is_some()
+                || i.live.map(|l| (l.paused, l.multiplayer))
+                    != state.live.map(|l| (l.paused, l.multiplayer));
+            let refresh =
+                i.live != state.live && i.live_sent.is_none_or(|t| t.elapsed() >= LIVE_EVERY);
+            if changed || refresh {
+                i.live_sent = Some(Instant::now());
+            }
+            i.game = state.game;
+            i.current_job = state.job;
+            i.game_problem = state.problem.map(str::to_owned);
+            i.live = state.live;
+            changed || refresh
         };
         if changed {
             self.emit_status().await;
