@@ -10,7 +10,7 @@ internet ──443──> Coolify proxy ──> web:3001 (site, API, /api/live/w
 
 ## Setup
 
-1. **New resource.** In a Coolify project: **+ New > Public Repository** (or **Private Repository (with GitHub App)**), pick this repo and branch.
+1. **New resource.** In a Coolify project: **+ New > Public Repository** (or **Private Repository (with GitHub App)**), pick this repo and branch, and name the resource **Tacho**.
    - **Build Pack:** Docker Compose
    - **Base Directory:** `/`
    - **Docker Compose Location:** `/docker-compose.coolify.yml`
