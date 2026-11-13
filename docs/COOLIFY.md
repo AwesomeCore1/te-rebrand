@@ -21,14 +21,16 @@ internet ──443──> Coolify proxy ──> web:3001 (site, API, /api/live/w
    - `SERVICE_URL_WEB`: the web domain; becomes `BETTER_AUTH_URL`.
 
    Fill in:
-   | Variable                       | Required | Value                                                                                           |
-   | ------------------------------ | -------- | ----------------------------------------------------------------------------------------------- |
-   | `DISCORD_CLIENT_ID`            | yes      | Discord application > OAuth2                                                                     |
-   | `DISCORD_CLIENT_SECRET`        | yes      | same place                                                                                      |
-   | `DISCORD_BOT_TOKEN`            | no       | Discord application > Bot. Empty: the bot starts and stays idle.                                |
-   | `STEAM_WEB_API_KEY`            | no       | shows the linked Steam persona name                                                             |
-   | `TRACKER_DOWNLOAD_URL`         | no       | Windows installer link for `/download`                                                          |
-   | `LIVE_MAP_ETS2_*`, `LIVE_MAP_ATS_*` | no  | map tiles for `/map` (see `apps/web/.env.schema`)                                               |
+
+   | Variable                            | Required | Value                                                            |
+   | ----------------------------------- | -------- | ---------------------------------------------------------------- |
+   | `DISCORD_CLIENT_ID`                 | yes      | Discord application > OAuth2                                     |
+   | `DISCORD_CLIENT_SECRET`             | yes      | same place                                                       |
+   | `DISCORD_BOT_TOKEN`                 | no       | Discord application > Bot. Empty: the bot starts and stays idle. |
+   | `STEAM_WEB_API_KEY`                 | no       | shows the linked Steam persona name                              |
+   | `TRACKER_DOWNLOAD_URL`              | no       | Windows installer link for `/download`                           |
+   | `LIVE_MAP_ETS2_*`, `LIVE_MAP_ATS_*` | no       | map tiles for `/map` (see `apps/web/.env.schema`)                |
+
 4. **Discord OAuth.** In the Discord developer portal, **OAuth2 > Redirects**, add `https://<your domain>/api/auth/callback/discord`.
 5. **Deploy.** Coolify builds the `web`, `migrate` and `bot` images, starts Postgres, runs the migrations (`prisma migrate deploy`), and only then starts web and bot. If a migration fails, web and bot are not replaced. Turn on **Auto Deploy** (GitHub App) or add the deploy webhook to deploy on every push.
 6. **Tracker.** Release builds must point at the site: build the tracker with `TACHO_API_URL=https://<your domain>`.
@@ -37,6 +39,6 @@ internet ──443──> Coolify proxy ──> web:3001 (site, API, /api/live/w
 
 - **One copy each** of web and bot: the TruckersMP membership check and the live map hub run inside the web process. Don't scale them.
 - **Changing the domain later:** update the web service's domain, check that `SERVICE_URL_WEB` changed with it, redeploy, and update the Discord redirect.
-- **The migrate container** shows as *exited (0)* after each deploy. That is expected; `exclude_from_hc` keeps it out of Coolify's health status. It downloads Prisma's schema engine from `binaries.prisma.sh` when it runs, so the server needs outbound HTTPS.
+- **The migrate container** shows as _exited (0)_ after each deploy. That is expected; `exclude_from_hc` keeps it out of Coolify's health status. It downloads Prisma's schema engine from `binaries.prisma.sh` when it runs, so the server needs outbound HTTPS.
 - **Backups:** Postgres data is in the `pgdata` volume. Coolify's scheduled database backups apply to standalone database resources, not to a database inside a compose app, so back it up yourself, e.g. a Coolify **Scheduled Task** on the postgres service: `pg_dump -U tacho -Fc tacho > /var/lib/postgresql/backup-$(date +%F).dump` and copy the dumps off the server. `infra/restore.sh` shows the restore steps.
 - Coolify-only keys (`exclude_from_hc`) make plain `docker compose` reject the file. To try it locally, use `docker-compose.yml` (development) or `infra/docker-compose.prod.yml`.
