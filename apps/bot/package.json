@@ -1,0 +1,26 @@
+{
+  "name": "bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun src/main.ts",
+    "dev:watch": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
+    "check-types": "tsc --noEmit",
+    "test": "bun test",
+    "test:db": "varlock run -- bun test ./test/prisma-store.dbtest.ts"
+  },
+  "dependencies": {
+    "@te-rebrand/api": "workspace:*",
+    "@te-rebrand/db": "workspace:*",
+    "@te-rebrand/truckersmp": "workspace:*",
+    "discord.js": "^14.28.1",
+    "varlock": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@te-rebrand/config": "workspace:*",
+    "@types/bun": "latest",
+    "typescript": "catalog:"
+  }
+}
