@@ -44,6 +44,7 @@
     "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/ && bun run --cwd packages/db db:generate",
     "auth:generate": "cd apps/web && bun run auth:generate",
     "check": "oxlint && oxfmt --write",
+    "test": "bun run --filter '*' test",
     "test:rust": "cargo test --workspace --exclude tracker",
     "check:rust": "cargo clippy --workspace --all-targets && cargo fmt --all --check",
     "db:seed": "bun run --cwd packages/db db:seed",
