@@ -77,6 +77,7 @@ function everyCall(ctx: Context, target: Awaited<ReturnType<typeof setup>>) {
     "jobs.approve": () => api.jobs.approve({ companyId, jobId: target.flagged.id }),
     "jobs.reject": () => api.jobs.reject({ companyId, jobId: target.flagged.id }),
     "settings.get": () => api.settings.get({ companyId }),
+    "settings.botStatus": () => api.settings.botStatus({ companyId }),
     "settings.update": () => api.settings.update({ companyId, ...SETTINGS }),
   };
 }

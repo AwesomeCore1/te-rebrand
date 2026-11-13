@@ -192,6 +192,20 @@ export class DiscordJs implements Discord {
     }
   }
 
+  async memberRoleIds(guildId: string, userId: string) {
+    const guild = this.guild(guildId);
+    try {
+      // force: without the Server Members intent a cached member goes stale.
+      const member = await guild.members.fetch({ user: userId, force: true });
+      // @everyone has the server's own id and is not a role anyone holds by choice.
+      return [...member.roles.cache.keys()].filter((id) => id !== guild.id);
+    } catch (error) {
+      const mapped = toDiscordError(error, `looking up a member of ${guild.name}`);
+      if (mapped.kind === "not_found") return null;
+      throw mapped;
+    }
+  }
+
   async role(guildId: string, roleId: string) {
     const guild = this.guild(guildId);
     try {

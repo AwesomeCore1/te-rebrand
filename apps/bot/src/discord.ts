@@ -75,6 +75,8 @@ export interface Discord {
   removeRole(guildId: string, userId: string, roleId: string, reason: string): Promise<void>;
   /** Null when that user is not a member of the server. */
   memberPermissions(guildId: string, userId: string): Promise<{ manageServer: boolean } | null>;
+  /** The roles a member has now, without @everyone. Null when that user is not a member of the server. */
+  memberRoleIds(guildId: string, userId: string): Promise<string[] | null>;
   /** The server a channel is in. Null when it does not exist or the bot cannot see it. */
   channelGuildId(channelId: string): Promise<string | null>;
   /** Null when the server has no such role. */

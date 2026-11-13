@@ -9,6 +9,8 @@
 import type { Database } from "@te-rebrand/db";
 import { TruckersMpError, vtcMembers, vtcMembership } from "@te-rebrand/truckersmp";
 
+import { requestRoleSync } from "./rank-roles";
+
 const HOUR = 3_600_000;
 
 export type MembershipCheckOptions = {
@@ -90,7 +92,7 @@ export async function checkMemberships(
     select: {
       id: true,
       role: true,
-      driver: { select: { displayName: true, steamId64: true } },
+      driver: { select: { id: true, displayName: true, steamId64: true } },
       company: { select: { id: true, name: true, truckersmpVtcId: true } },
     },
     orderBy: [{ companyId: "asc" }, { joinedAt: "asc" }],
@@ -112,13 +114,28 @@ export async function checkMemberships(
     if (e.status === 429) result.rateLimited = true;
     return e.status ? `TruckersMP answered HTTP ${e.status}` : "TruckersMP could not be reached";
   };
-  const mark = (ids: string[], data: { status?: "inactive"; leftAt?: Date }) =>
+  /** Seen today. */
+  const mark = (ids: string[]) =>
     dryRun || ids.length === 0
       ? undefined
       : db.membership.updateMany({
           // Still active: someone may have left or been removed while we waited.
           where: { id: { in: ids }, status: "active" },
-          data: { ...data, lastVtcCheckAt: now() },
+          data: { lastVtcCheckAt: now() },
+        });
+  /** Inactive, and their Discord rank role taken back, in one step. */
+  const deactivate = (member: { id: string; companyId: string; driverId: string }) =>
+    dryRun
+      ? undefined
+      : db.$transaction(async (tx) => {
+          const at = now();
+          const { count } = await tx.membership.updateMany({
+            where: { id: member.id, status: "active" },
+            data: { status: "inactive", leftAt: at, lastVtcCheckAt: at },
+          });
+          // Left or removed while we waited: that already asked for the sync.
+          if (count === 0) return;
+          await requestRoleSync(tx, { ...member, reason: "inactive" });
         });
 
   for (const members of byCompany.values()) {
@@ -168,14 +185,14 @@ export async function checkMemberships(
         confirmed.push(m.id);
       } else if (m.role === "owner") {
         result.ownersNotInVtc.push(who);
-        await mark([m.id], {});
+        await mark([m.id]);
       } else {
         result.deactivated.push(who);
-        await mark([m.id], { status: "inactive", leftAt: now() });
+        await deactivate({ id: m.id, companyId: company.id, driverId: m.driver.id });
       }
     }
     result.confirmed += confirmed.length;
-    await mark(confirmed, {});
+    await mark(confirmed);
   }
   return result;
 }

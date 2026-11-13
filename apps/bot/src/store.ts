@@ -1,6 +1,7 @@
 // Everything the bot asks of the database. The Prisma version is in
 // prisma-store.ts; tests use the in-memory one in test/fakes.ts.
 import type { CompanySettings } from "@te-rebrand/api/company-settings";
+import type { OutboxPayload } from "@te-rebrand/api/outbox";
 
 export type CompanyRow = {
   id: string;
@@ -37,10 +38,29 @@ export type MonthlyDriver = {
 export type PostStatus = "pending" | "posted" | "failed" | "skipped" | "unknown";
 export type PostState = { companyId: string; key: string; status: PostStatus; updatedAt: Date };
 
+/** The outbox type that asks for a member's rank roles to be put right. */
+export const ROLE_SYNC = "rank_roles_sync" satisfies OutboxPayload["type"];
+/**
+ * The outbox is read in two lanes, each by its own loop: "roles" is the role
+ * syncs, "posts" is everything else. A ladder change in a big company writes
+ * a sync per member; in a lane of their own they cannot hold up the delivery feed.
+ */
+export type OutboxLane = "posts" | "roles";
+
+/** Where a driver stands in a company right now, for a role sync. */
+export type RankRoleTarget = {
+  /** An active member. Anyone else holds no rank role. */
+  active: boolean;
+  /** The rank they hold, if any. */
+  rankName: string | null;
+  /** That rank's Discord role, if it has one. */
+  roleId: string | null;
+};
+
 export interface Store {
   // ---- outbox (see outbox.ts for the rules) ----
-  /** Unprocessed rows whose `nextAttemptAt` has passed or was never set, oldest first. */
-  pendingOutbox(now: Date, limit: number): Promise<OutboxRow[]>;
+  /** Unprocessed rows of a lane whose `nextAttemptAt` has passed or was never set, oldest first. */
+  pendingOutbox(now: Date, limit: number, lane: OutboxLane): Promise<OutboxRow[]>;
   /**
    * Starts a try: attempts + 1, lastError cleared, hidden from other readers
    * until `until`. False if someone else got to the row first.
@@ -68,6 +88,8 @@ export interface Store {
   driverDiscordId(driverId: string): Promise<string | null>;
   /** Every `Rank.discordRoleId` of the company: the only roles the bot may touch for it. */
   rankRoleIds(companyId: string): Promise<string[]>;
+  /** The driver's membership and rank in the company as they are now (ranks.ts in the API). */
+  rankRoleTarget(companyId: string, driverId: string): Promise<RankRoleTarget>;
   /** Drivers by delivered distance with `from <= finishedAt < to`, furthest first. */
   monthlyTop(companyId: string, from: Date, to: Date, limit: number): Promise<MonthlyDriver[]>;
 

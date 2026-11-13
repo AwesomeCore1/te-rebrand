@@ -520,6 +520,18 @@ mod tests {
         assert_eq!(took, Duration::from_secs(3000));
         assert!(finished <= SystemTime::now());
         assert!(uuid::Uuid::parse_str(&upload.client_job_id).is_ok());
+
+        // The recording's toll and fine ride along inside the job, timed on
+        // the recording's own clock; the API places them between the two
+        // wall-clock times above.
+        let events = serde_json::to_value(&upload.job.events).unwrap();
+        assert_eq!(
+            events,
+            serde_json::json!([
+                { "at_ms": 2000, "type": "toll", "amount": 38 },
+                { "at_ms": 3000, "type": "fine", "offence": "speeding", "amount": 550 },
+            ])
+        );
     }
 
     #[test]

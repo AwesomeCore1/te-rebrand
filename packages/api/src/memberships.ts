@@ -6,6 +6,7 @@ import { player, TruckersMpError } from "@te-rebrand/truckersmp";
 import { TRPCError } from "@trpc/server";
 
 import { leaveBlock, removalBlock, type Role } from "./membership-rules";
+import { requestRoleSync } from "./rank-roles";
 
 /** The database, or a transaction on it. */
 export type Tx = Omit<Database, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;
@@ -42,7 +43,7 @@ export async function joinCompany(
   if (current) {
     throw new TRPCError({ code: "CONFLICT", message: conflictMessage(current.company.name) });
   }
-  return tx.membership.create({
+  const membership = await tx.membership.create({
     data: {
       companyId: input.companyId,
       driverId: input.driverId,
@@ -52,6 +53,14 @@ export async function joinCompany(
       lastVtcCheckAt: input.checkedVtc ? input.now : null,
     },
   });
+  // The Discord role of the rank they start at (someone who comes back has
+  // distance here already).
+  await requestRoleSync(tx, {
+    companyId: input.companyId,
+    driverId: input.driverId,
+    reason: "joined",
+  });
+  return membership;
 }
 
 /** A manager or owner takes a member out of the company. */
@@ -67,32 +76,49 @@ export async function removeMember(
   // Scoped by companyId: a membership id from another company is "not found".
   const target = await db.membership.findFirst({
     where: { id: input.membershipId, companyId: input.companyId, status: "active" },
-    select: { id: true, role: true },
+    select: { id: true, role: true, driverId: true },
   });
   if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That member isn't here." });
   const block = removalBlock(input.actor.role, target.role, target.id === input.actor.membershipId);
   if (block) throw new TRPCError({ code: "FORBIDDEN", message: block });
-  const { count } = await db.membership.updateMany({
-    // The role is checked again in the write, in case it changed in between.
-    where: { id: target.id, companyId: input.companyId, status: "active", role: target.role },
-    data: { status: "removed", leftAt: input.now ?? new Date() },
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.membership.updateMany({
+      // The role is checked again in the write, in case it changed in between.
+      where: { id: target.id, companyId: input.companyId, status: "active", role: target.role },
+      data: { status: "removed", leftAt: input.now ?? new Date() },
+    });
+    if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "That member isn't here." });
+    // Their rank role in the company's Discord goes with them.
+    await requestRoleSync(tx, {
+      companyId: input.companyId,
+      driverId: target.driverId,
+      reason: "removed",
+    });
   });
-  if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "That member isn't here." });
 }
 
 /** A member leaves their own company. */
 export async function leaveCompany(
   db: Database,
-  membership: { id: string; role: Role },
+  membership: { id: string; role: Role; companyId: string; driverId: string },
   now = new Date(),
 ) {
   const block = leaveBlock(membership.role);
   if (block) throw new TRPCError({ code: "FORBIDDEN", message: block });
-  const { count } = await db.membership.updateMany({
-    where: { id: membership.id, status: "active", role: { not: "owner" } },
-    data: { status: "left", leftAt: now },
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.membership.updateMany({
+      where: { id: membership.id, status: "active", role: { not: "owner" } },
+      data: { status: "left", leftAt: now },
+    });
+    if (count === 0) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "You're not in a company." });
+    }
+    await requestRoleSync(tx, {
+      companyId: membership.companyId,
+      driverId: membership.driverId,
+      reason: "left",
+    });
   });
-  if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "You're not in a company." });
 }
 
 /** True for Prisma's "unique constraint failed". */

@@ -69,16 +69,12 @@ export async function driverRank(
   return { kmInCompany: km, ...rankAt(ranks, km) };
 }
 
-/** The whole ladder, with how many active members hold each rank. */
-export async function rankLadder(
-  db: Pick<Database, "rank" | "job" | "membership">,
-  companyId: string,
-) {
-  const [ranks, members, distances] = await Promise.all([
-    companyRanks(db, companyId),
+/** Every active member with what they have driven for the company, km. */
+export async function memberDistances(db: Pick<Database, "job" | "membership">, companyId: string) {
+  const [members, distances] = await Promise.all([
     db.membership.findMany({
       where: { companyId, status: "active" },
-      select: { driverId: true },
+      select: { driverId: true, driver: { select: { displayName: true } } },
     }),
     db.job.groupBy({
       by: ["driverId"],
@@ -87,10 +83,26 @@ export async function rankLadder(
     }),
   ]);
   const kmOf = new Map(distances.map((d) => [d.driverId, d._sum.drivenKm ?? 0]));
+  return members.map((m) => ({
+    driverId: m.driverId,
+    displayName: m.driver.displayName,
+    km: kmOf.get(m.driverId) ?? 0,
+  }));
+}
+
+/** The whole ladder, with how many active members hold each rank. */
+export async function rankLadder(
+  db: Pick<Database, "rank" | "job" | "membership">,
+  companyId: string,
+) {
+  const [ranks, members] = await Promise.all([
+    companyRanks(db, companyId),
+    memberDistances(db, companyId),
+  ]);
   const holders = new Map<string, number>();
   let unranked = 0;
   for (const m of members) {
-    const rank = rankAt(ranks, kmOf.get(m.driverId) ?? 0).current;
+    const rank = rankAt(ranks, m.km).current;
     if (rank) holders.set(rank.id, (holders.get(rank.id) ?? 0) + 1);
     else unranked += 1;
   }

@@ -2,8 +2,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import type { Context } from "../context";
+import type { Database } from "@te-rebrand/db";
+
 import { companyProcedure, router } from "../index";
+import { changeRanks } from "../rank-roles";
 import { rankLadder } from "../ranks";
 
 /** A Discord id (role, channel, server): a long number. */
@@ -22,7 +24,7 @@ const rankFields = z.object({
 
 /** A ladder has one rank per name and one per distance. */
 async function refuseDuplicate(
-  db: Context["db"],
+  db: Pick<Database, "rank">,
   companyId: string,
   rank: z.infer<typeof rankFields>,
   exceptId?: string,
@@ -44,37 +46,46 @@ async function refuseDuplicate(
   });
 }
 
+// Every change goes through `changeRanks`: it checks and writes in one
+// transaction, and asks the Discord bot to fix the roles of the members the
+// change moves (../rank-roles.ts).
 export const ranksRouter = router({
   /** The ladder, lowest first, with how many active members hold each rank. */
   list: companyProcedure("manager").query(({ ctx }) => rankLadder(ctx.db, ctx.companyId)),
 
   create: companyProcedure("manager")
     .input(rankFields)
-    .mutation(async ({ ctx, input }) => {
+    .mutation(({ ctx, input }) => {
       const { companyId: _, ...rank } = input;
-      await refuseDuplicate(ctx.db, ctx.companyId, rank);
-      return ctx.db.rank.create({ data: { ...rank, companyId: ctx.companyId } });
+      return changeRanks(ctx.db, ctx.companyId, async (tx) => {
+        await refuseDuplicate(tx, ctx.companyId, rank);
+        return tx.rank.create({ data: { ...rank, companyId: ctx.companyId } });
+      });
     }),
 
   update: companyProcedure("manager")
     .input(rankFields.extend({ rankId: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(({ ctx, input }) => {
       const { companyId: _, rankId, ...rank } = input;
-      await refuseDuplicate(ctx.db, ctx.companyId, rank, rankId);
-      // Scoped by companyId, so a manager can't touch another company's ranks.
-      const { count } = await ctx.db.rank.updateMany({
-        where: { id: rankId, companyId: ctx.companyId },
-        data: rank,
+      return changeRanks(ctx.db, ctx.companyId, async (tx) => {
+        await refuseDuplicate(tx, ctx.companyId, rank, rankId);
+        // Scoped by companyId, so a manager can't touch another company's ranks.
+        const { count } = await tx.rank.updateMany({
+          where: { id: rankId, companyId: ctx.companyId },
+          data: rank,
+        });
+        if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "That rank is gone." });
       });
-      if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "That rank is gone." });
     }),
 
   delete: companyProcedure("manager")
     .input(z.object({ rankId: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      const { count } = await ctx.db.rank.deleteMany({
-        where: { id: input.rankId, companyId: ctx.companyId },
-      });
-      if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "That rank is gone." });
-    }),
+    .mutation(({ ctx, input }) =>
+      changeRanks(ctx.db, ctx.companyId, async (tx) => {
+        const { count } = await tx.rank.deleteMany({
+          where: { id: input.rankId, companyId: ctx.companyId },
+        });
+        if (count === 0) throw new TRPCError({ code: "NOT_FOUND", message: "That rank is gone." });
+      }),
+    ),
 });

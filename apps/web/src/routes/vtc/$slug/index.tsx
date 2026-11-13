@@ -20,6 +20,7 @@ import {
 import { ConvoyRow } from "@/components/convoy-row";
 import { Markdown } from "@/components/markdown";
 import { formatDistance, formatWhen } from "@/lib/format";
+import { steamConnectHref, useSteamResult } from "@/lib/use-steam-result";
 import { useTRPC } from "@/utils/trpc";
 
 // A company's public page: who they are, their numbers, the leaderboard, their
@@ -35,6 +36,7 @@ const MAX_ANSWER = 1000;
 function CompanyPage() {
   const { slug } = Route.useParams();
   const trpc = useTRPC();
+  useSteamResult();
   const page = useQuery(trpc.company.page.queryOptions({ slug }, { retry: false }));
   const viewer = useQuery(trpc.company.viewer.queryOptions({ slug }, { retry: false }));
 
@@ -306,7 +308,13 @@ function Leaderboard({
               >
                 <span className="w-5 shrink-0 text-muted-foreground">{r.rank}</span>
                 <span className="min-w-0 flex-1 truncate font-semibold">
-                  {r.displayName}
+                  <Link
+                    to="/driver/$driverId"
+                    params={{ driverId: r.driverId }}
+                    className="rounded-sm underline-offset-2 hover:underline"
+                  >
+                    {r.displayName}
+                  </Link>
                   {you && <span className="font-normal text-muted-foreground"> (you)</span>}
                 </span>
                 <span className="hidden shrink-0 text-muted-foreground sm:inline">
@@ -551,10 +559,10 @@ function JoinCard({
         <div className="space-y-4 p-5">
           <p className="text-[15px] leading-relaxed text-muted-foreground">
             Link Steam before you apply. It's how {company.name} checks on TruckersMP that you're in
-            their VTC. You come back to your dashboard afterwards; open this page again to apply.
+            their VTC. You come back to this page afterwards.
           </p>
           {/* A plain link: a full-page redirect to Steam, not an API call. */}
-          <a href="/api/steam/connect">
+          <a href={steamConnectHref(`/vtc/${slug}#join`)}>
             <Button>Connect Steam</Button>
           </a>
         </div>

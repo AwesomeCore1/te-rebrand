@@ -10,11 +10,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 
 import { updateCompanySettings } from "@te-rebrand/api/company-settings";
 import { enqueueOutbox } from "@te-rebrand/api/outbox";
+import { requestRoleSync } from "@te-rebrand/api/rank-roles";
 import { createPrismaClient } from "@te-rebrand/db";
 
 import { createBot } from "../src/bot";
 import { silentLogger } from "../src/log";
 import { prismaStore } from "../src/prisma-store";
+import type { OutboxLane } from "../src/store";
 import { FakeDiscord } from "./fakes";
 
 const url = process.env.DATABASE_URL;
@@ -188,7 +190,7 @@ test("monthly top: delivered jobs of that company in that month only", async () 
 
 test("outbox: claim, wait, last try and finish, one winner per claim", async () => {
   const mine = async () =>
-    (await store.pendingOutbox(new Date(), 10_000)).filter((r) => r.companyId === COMPANY);
+    (await store.pendingOutbox(new Date(), 10_000, "posts")).filter((r) => r.companyId === COMPANY);
   const first = await db.outboxEvent.create({
     data: {
       companyId: COMPANY,
@@ -371,8 +373,8 @@ test("end to end on the real tables: rows written by the API come out as posts a
   // This database is shared: the bot under test only sees this test's rows.
   const onlyMine = {
     ...store,
-    pendingOutbox: async (now: Date) =>
-      (await store.pendingOutbox(now, 10_000)).filter((r) => r.companyId === COMPANY),
+    pendingOutbox: async (now: Date, _limit: number, lane: OutboxLane) =>
+      (await store.pendingOutbox(now, 10_000, lane)).filter((r) => r.companyId === COMPANY),
   };
   const bot = createBot({ store: onlyMine, discord, log: silentLogger });
 
@@ -401,4 +403,92 @@ test("end to end on the real tables: rows written by the API come out as posts a
     guildOk: true,
     guildReason: null,
   });
+});
+
+test("where a driver stands: active members by distance for this company, nobody else", async () => {
+  // From "monthly top" above: the driver has 1 600 km here, the owner 2 000, the manager 900.
+  expect(await store.rankRoleTarget(COMPANY, "bottest-driver-driver")).toEqual({
+    active: true,
+    rankName: "Veteran",
+    roleId: "400000000000000002",
+  });
+  expect(await store.rankRoleTarget(COMPANY, "bottest-driver-manager")).toEqual({
+    active: true,
+    rankName: "Rookie",
+    roleId: "400000000000000001",
+  });
+  // Left the company, never in that company, no such driver.
+  const nobody = { active: false, rankName: null, roleId: null };
+  expect(await store.rankRoleTarget(COMPANY, "bottest-driver-exmanager")).toEqual(nobody);
+  expect(await store.rankRoleTarget(OTHER, "bottest-driver-driver")).toEqual(nobody);
+  expect(await store.rankRoleTarget(COMPANY, "bottest-driver-nope")).toEqual(nobody);
+
+  // A rank without a Discord role: still their rank, with no role to give.
+  await job("owner", 4000, "2026-11-02T10:00:00Z");
+  expect(await store.rankRoleTarget(COMPANY, "bottest-driver-owner")).toEqual({
+    active: true,
+    rankName: "No role",
+    roleId: null,
+  });
+});
+
+test("role syncs on the real tables: their own lane, and the roles follow the membership", async () => {
+  const driverId = "bottest-driver-driver";
+  const userId = "300000000000000003";
+  const [rookie, veteran, staff] = [
+    "400000000000000001",
+    "400000000000000002",
+    "400000000000000009",
+  ];
+  // The API's own function writes the row, as it does when someone joins.
+  await db.$transaction((tx) =>
+    requestRoleSync(tx, { companyId: COMPANY, driverId, reason: "joined" }),
+  );
+  const mine = async (lane: OutboxLane) =>
+    (await store.pendingOutbox(new Date(), 10_000, lane)).filter((r) => r.companyId === COMPANY);
+  expect((await mine("roles")).map((r) => r.type)).toEqual(["rank_roles_sync"]);
+  expect(await mine("posts")).toEqual([]);
+
+  const discord = new FakeDiscord();
+  const role = { managed: false, elevated: false, aboveBot: false };
+  discord.addGuild(GUILD, {
+    members: new Map([
+      ["300000000000000001", { manageServer: true, roles: new Set<string>() }],
+      [userId, { manageServer: false, roles: new Set([rookie, staff]) }],
+    ]),
+    roles: new Map([
+      [rookie, { name: "Rookie", ...role }],
+      [veteran, { name: "Veteran", ...role }],
+      [staff, { name: "Staff", ...role }],
+    ]),
+  });
+  const onlyMine = {
+    ...store,
+    pendingOutbox: async (now: Date, _limit: number, lane: OutboxLane) =>
+      (await store.pendingOutbox(now, 10_000, lane)).filter((r) => r.companyId === COMPANY),
+  };
+  const bot = createBot({ store: onlyMine, discord, log: silentLogger });
+  const roles = () => [...discord.guilds.get(GUILD)!.members.get(userId)!.roles].sort();
+
+  // 1 600 km: a Veteran. The Rookie role goes, Staff is nobody's business.
+  expect(await bot.outbox()).toBe(0);
+  expect(await bot.roleSync()).toBe(1);
+  expect(roles()).toEqual([veteran, staff]);
+  expect(discord.sent).toHaveLength(0);
+
+  // They leave: the rank role goes with them.
+  await db.$transaction(async (tx) => {
+    await tx.membership.updateMany({ where: { driverId }, data: { status: "left" } });
+    await requestRoleSync(tx, { companyId: COMPANY, driverId, reason: "left" });
+  });
+  expect(await bot.roleSync()).toBe(1);
+  expect(roles()).toEqual([staff]);
+
+  const rows = await db.outboxEvent.findMany({
+    where: { companyId: COMPANY, type: "rank_roles_sync" },
+  });
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row).toMatchObject({ attempts: 1, lastError: null, processedAt: expect.any(Date) });
+  }
 });

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@te-rebrand/ui/components/button";
 import { ArrowRight, Check, TriangleAlert, X } from "lucide-react";
 import { useState } from "react";
@@ -151,9 +151,15 @@ function FlaggedJob({
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
         <div className="min-w-0">
           <h3 className="text-[16px] font-bold">
-            {job.sourceCity}{" "}
-            <ArrowRight className="inline size-4 align-[-2px] text-signal-ink" aria-label="to" />{" "}
-            {job.destCity}
+            <Link
+              to="/jobs/$jobId"
+              params={{ jobId: job.id }}
+              className="underline-offset-4 hover:underline"
+            >
+              {job.sourceCity}{" "}
+              <ArrowRight className="inline size-4 align-[-2px] text-signal-ink" aria-label="to" />{" "}
+              {job.destCity}
+            </Link>
           </h3>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
             <GameBadge game={job.game === "ets2" ? "ETS2" : "ATS"} />

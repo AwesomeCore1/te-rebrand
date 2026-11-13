@@ -8,9 +8,11 @@ import { silentLogger } from "../src/log";
 import type {
   CompanyRow,
   MonthlyDriver,
+  OutboxLane,
   OutboxRow,
   PostState,
   PostStatus,
+  RankRoleTarget,
   Store,
 } from "../src/store";
 
@@ -27,6 +29,8 @@ export class FakeDiscord implements Discord {
   sent: { channelId: string; message: OutgoingMessage }[] = [];
   roleChanges: { action: "add" | "remove"; guildId: string; userId: string; roleId: string }[] = [];
   memberLookups = 0;
+  /** Calls to memberRoleIds: one per role sync that got as far as Discord. */
+  roleLookups = 0;
   channelLookups = 0;
   /** Errors for the next calls to sendMessage, in order. `afterSending` posts first, then throws. */
   sendFailures: { error: Error; afterSending?: boolean }[] = [];
@@ -100,6 +104,12 @@ export class FakeDiscord implements Discord {
     return member ? { manageServer: member.manageServer } : null;
   }
 
+  async memberRoleIds(guildId: string, userId: string) {
+    this.roleLookups++;
+    const member = this.guild(guildId).members.get(userId);
+    return member ? [...member.roles] : null;
+  }
+
   async channelGuildId(channelId: string) {
     this.channelLookups++;
     for (const [id, guild] of this.guilds) if (guild.channels.has(channelId)) return id;
@@ -127,6 +137,8 @@ export class MemoryStore implements Store {
   managers = new Map<string, string[]>();
   drivers = new Map<string, { name: string; discordId: string | null }>();
   rankRoles = new Map<string, string[]>();
+  /** "<companyId>:<driverId>" -> where that driver stands. Nobody listed is not a member. */
+  rankTargets = new Map<string, RankRoleTarget>();
   jobs: Job[] = [];
   outbox: StoredOutbox[] = [];
   posts: StoredPost[] = [];
@@ -179,8 +191,9 @@ export class MemoryStore implements Store {
     return this.outbox.find((r) => r.id === id)!;
   }
 
-  async pendingOutbox(now: Date, limit: number) {
+  async pendingOutbox(now: Date, limit: number, lane: OutboxLane) {
     return this.outbox
+      .filter((r) => (r.type === "rank_roles_sync") === (lane === "roles"))
       .filter((r) => !r.processedAt && (!r.nextAttemptAt || r.nextAttemptAt <= now))
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .slice(0, limit)
@@ -240,6 +253,21 @@ export class MemoryStore implements Store {
 
   async rankRoleIds(companyId: string) {
     return this.rankRoles.get(companyId) ?? [];
+  }
+
+  /** Makes the driver an active member holding the rank with this role (null: a rank without one). */
+  setRank(companyId: string, driverId: string, rankName: string | null, roleId: string | null) {
+    this.rankTargets.set(`${companyId}:${driverId}`, { active: true, rankName, roleId });
+  }
+
+  async rankRoleTarget(companyId: string, driverId: string) {
+    return (
+      this.rankTargets.get(`${companyId}:${driverId}`) ?? {
+        active: false,
+        rankName: null,
+        roleId: null,
+      }
+    );
   }
 
   async monthlyTop(companyId: string, from: Date, to: Date, limit: number) {
@@ -391,6 +419,7 @@ export function world(start = "2026-11-13T12:00:00Z") {
   store.managers.set("nh", [OWNER]);
   store.drivers.set("ingrid", { name: "Ingrid", discordId: DRIVER });
   store.rankRoles.set("nh", [ROLE.rookie, ROLE.veteran]);
+  store.setRank("nh", "ingrid", "Rookie", ROLE.rookie);
 
   /** A bot as it is after a restart: same database, same Discord, empty memory. */
   const startBot = (extra: Partial<Parameters<typeof createBot>[0]> = {}) =>
@@ -412,6 +441,16 @@ export const delivery = (over: Partial<Extract<OutboxPayload, { type: "job_deliv
     cargo: "Electronics",
     drivenKm: 1196,
     income: 24310,
+    ...over,
+  }) satisfies OutboxPayload;
+
+export const roleSync = (over: Partial<Extract<OutboxPayload, { type: "rank_roles_sync" }>> = {}) =>
+  ({
+    type: "rank_roles_sync",
+    driverId: "ingrid",
+    driverName: "Ingrid",
+    reason: "joined",
+    retiredRoleIds: [],
     ...over,
   }) satisfies OutboxPayload;
 

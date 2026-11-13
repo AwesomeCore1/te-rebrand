@@ -10,6 +10,8 @@ import { Outbox } from "./outbox";
 import type { Store } from "./store";
 
 export const OUTBOX_EVERY_MS = 3_000;
+/** Role syncs handled per round. Each is a member lookup and at most a few role changes. */
+export const ROLE_SYNC_BATCH = 10;
 /** Monthly winners and convoy reminders are looked at this often. */
 export const SCHEDULE_EVERY_MS = 5 * 60_000;
 
@@ -28,6 +30,7 @@ export function createBot({ store, discord, log, now = () => new Date(), ...rest
   const outbox = new Outbox(deps);
   return {
     outbox: () => outbox.tick(),
+    roleSync: () => outbox.tick(ROLE_SYNC_BATCH, "roles"),
     monthly: () => postMonthlyWinners(deps),
     convoys: () => postConvoyReminders({ ...deps, upcomingConvoys: rest.upcomingConvoys }),
   };
@@ -37,6 +40,8 @@ export function startBot(deps: BotDeps) {
   const bot = createBot(deps);
   const loops = [
     every("delivery feed and rank-ups", OUTBOX_EVERY_MS, bot.outbox, deps.log),
+    // Its own loop, so a few hundred syncs after a ladder change never delay a post.
+    every("rank role sync", OUTBOX_EVERY_MS, bot.roleSync, deps.log),
     every("monthly winners", SCHEDULE_EVERY_MS, bot.monthly, deps.log),
     every("convoy reminders", SCHEDULE_EVERY_MS, bot.convoys, deps.log),
   ];

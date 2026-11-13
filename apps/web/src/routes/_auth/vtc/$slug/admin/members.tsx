@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { removalBlock } from "@te-rebrand/api/membership-rules";
 import { Button } from "@te-rebrand/ui/components/button";
 import { UserMinus } from "lucide-react";
@@ -140,7 +140,13 @@ function MemberRow({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="min-w-0 flex-1 basis-40">
           <div className="truncate text-[15px] font-semibold">
-            {name}
+            <Link
+              to="/driver/$driverId"
+              params={{ driverId: m.driver.id }}
+              className="rounded-sm underline-offset-2 hover:underline"
+            >
+              {name}
+            </Link>
             {m.you && <span className="font-normal text-muted-foreground"> (you)</span>}
           </div>
           <div className="mt-0.5 text-[13px] text-muted-foreground">

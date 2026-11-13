@@ -4,6 +4,7 @@ One bot for every VTC on Tacho. A VTC invites it to its own Discord server and p
 
 - **Deliveries**: each delivered job, in the delivery channel.
 - **Rank-ups**: a post in the rank-up channel, the new rank's role given and the previous one taken away.
+- **Rank roles kept right**: when a driver joins, leaves, is removed or is set inactive, and when a rank is added, edited or deleted, the members it concerns get the role of the rank they hold and lose the company's other rank roles. Nothing is posted for this.
 - **Monthly winners**: on the 1st (UTC), the top three drivers of the month before by delivered distance.
 - **Convoy reminders**: a day before and an hour before each convoy the VTC hosts on TruckersMP.
 
@@ -64,7 +65,13 @@ A manager could type in the id of another VTC's server that the bot happens to b
 
 If not, it does nothing there and writes the reason to the `bot_status` table (`guildOk`, `guildReason`). The answer is remembered for five minutes (one minute for a "no"), so a fixed setup starts working within a minute or so. Posts that were due while the check failed are not made up later.
 
-Roles get the same care: the bot only gives or takes a role that is the `discordRoleId` of a rank of **that** company at that moment.
+Roles get the same care: the bot only gives a role that is the `discordRoleId` of a rank of **that** company at that moment, and never one with admin or moderation permissions. It takes a role only if it is such a rank role, or if the website recorded, in the same step as a rank edit or delete, that the role just stopped being one (so members do not keep the role of a rank that no longer has it). Any other role a member holds is never touched.
+
+### How rank roles are kept right
+
+The website writes a `rank_roles_sync` row per member whose roles may be wrong (`packages/api/src/rank-roles.ts`). The row names the member, not the role: when the bot gets to it, it reads from the database whether they are an active member and which rank they hold, looks up the roles they have in the server, and changes only what differs. So a member who is already right costs one lookup, a row that waited still ends in the right role, and running a row twice changes nothing.
+
+A change to the ladder in a big company can write hundreds of rows. They are handled in a loop of their own, ten per round, so deliveries and rank-ups are never held up behind them.
 
 ## Running
 
@@ -95,7 +102,8 @@ Nothing here needs a person to step in; this is what to expect and where to look
 | Company has no server or no channel for that kind of post    | Marks the event processed, posts nothing                                                                | `outbox_event.lastError` ("Skipped: ...")          |
 | Server check fails, channel is in another server             | Same, and nothing is changed in that server                                                             | `bot_status.guildReason`, `bot_status.lastProblem` |
 | Bot lacks a permission in the channel                        | Marks the event processed, posts nothing                                                                | `outbox_event.lastError`, `bot_status.lastProblem` |
-| Bot lacks Manage Roles, or its role is below the rank role   | Posts the rank-up, leaves roles alone                                                                   | same                                               |
+| Bot lacks Manage Roles, or its role is below the rank role   | Posts the rank-up, leaves roles alone. A role sync is marked processed with the reason                  | same                                               |
+| A member is not in the server, or has no Discord account     | Role sync skipped and marked processed; not tried again                                                 | `outbox_event.lastError` ("Skipped: ...")          |
 | Discord is down or rate-limiting                             | Tries again after 15 s, 1 min, 5 min, 15 min, 1 h; gives up after 6 tries. Other events are not held up | `outbox_event.attempts`, `lastError`               |
 | The bot stops between posting and writing that down          | One more try two minutes later, and no more after that: a post can appear twice, never three times      | `outbox_event.lastError`                           |
 | A delivery is more than 24 hours old when the bot gets to it | Skipped, so a long outage does not end in a flood                                                       | `outbox_event.lastError`                           |
@@ -107,13 +115,13 @@ The rules are written out at the top of `src/outbox.ts` and `src/ledger.ts`.
 ## Code
 
 ```
-src/discord.ts       the six things the bot asks of Discord (an interface)
+src/discord.ts       the seven things the bot asks of Discord (an interface)
 src/discord-js.ts    that interface on discord.js: the only file that needs a token to run
 src/store.ts         what the bot asks of the database (an interface)
 src/prisma-store.ts  that interface on Postgres
 src/access.ts        the server and channel check
-src/roles.ts         which roles may be given or taken
-src/outbox.ts        deliveries and rank-ups
+src/roles.ts         which roles may be given or taken, for a rank-up and for a sync
+src/outbox.ts        deliveries, rank-ups and rank role syncs
 src/ledger.ts        post-at-most-once for scheduled posts
 src/monthly.ts       monthly winners
 src/convoys.ts       convoy reminders
@@ -130,4 +138,4 @@ bun run --cwd apps/bot test:db    # the database layer on the real Postgres from
 
 `test:db` creates rows whose ids start with `bottest-` and removes them again. It does not touch other rows.
 
-Not covered by any test: `src/discord-js.ts` talking to the real Discord (it needs a token and a server). After setting a token, check once by hand: a delivery appears, a rank-up gives the role, and a company pointed at a server it does not run gets nothing.
+Not covered by any test: `src/discord-js.ts` talking to the real Discord (it needs a token and a server). After setting a token, check once by hand: a delivery appears, a rank-up gives the role, an accepted application gives the starting rank's role, leaving the company takes it away, and a company pointed at a server it does not run gets nothing.

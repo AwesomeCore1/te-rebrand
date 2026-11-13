@@ -1,6 +1,10 @@
-// The delivery feed and rank-ups. The API writes OutboxEvent rows
-// (packages/api/src/outbox.ts); this reads the unprocessed ones, oldest first,
-// posts them and marks them processed.
+// The delivery feed, rank-ups and rank role syncs. The API writes OutboxEvent
+// rows (packages/api/src/outbox.ts); this reads the unprocessed ones, oldest
+// first, does what they ask and marks them processed.
+//
+// Two lanes, each with its own loop (bot.ts): "posts" for deliveries and
+// rank-ups, "roles" for role syncs, which post nothing and can come hundreds at
+// a time after a change to a company's ranks.
 //
 // What happens when things go wrong
 // ---------------------------------
@@ -32,8 +36,8 @@ import { DiscordError, describeError, type Discord, type OutgoingMessage } from 
 import { dedupeKey } from "./ledger";
 import type { Logger } from "./log";
 import { deliveryMessage, rankUpMessage } from "./messages";
-import { changeRankRoles } from "./roles";
-import type { CompanyRow, OutboxRow, Store } from "./store";
+import { changeRankRoles, syncRankRoles } from "./roles";
+import type { CompanyRow, OutboxLane, OutboxRow, Store } from "./store";
 
 export const MAX_ATTEMPTS = 6;
 /** Wait after the 1st, 2nd, ... failed try. */
@@ -54,10 +58,10 @@ type Deps = { store: Store; discord: Discord; access: Access; now: () => Date; l
 export class Outbox {
   constructor(private readonly deps: Deps) {}
 
-  /** Handles up to `limit` rows. Returns how many it took on. */
-  async tick(limit = 20): Promise<number> {
+  /** Handles up to `limit` rows of one lane. Returns how many it took on. */
+  async tick(limit = 20, lane: OutboxLane = "posts"): Promise<number> {
     const { store, now, log } = this.deps;
-    const rows = await store.pendingOutbox(now(), limit);
+    const rows = await store.pendingOutbox(now(), limit, lane);
     let handled = 0;
     for (const row of rows) {
       const interrupted = row.attempts > 0 && row.lastError === null;
@@ -124,9 +128,55 @@ export class Outbox {
     if (!company) return "Skipped: the company no longer exists.";
     if (!company.discordGuildId) return "Skipped: the company has no Discord server set.";
 
-    return parsed.data.type === "job_delivered"
-      ? this.delivery(row, company, parsed.data)
-      : this.rankUp(row, company, parsed.data, lastTry);
+    switch (parsed.data.type) {
+      case "job_delivered":
+        return this.delivery(row, company, parsed.data);
+      case "rank_up":
+        return this.rankUp(row, company, parsed.data, lastTry);
+      case "rank_roles_sync":
+        return this.roleSync(company, parsed.data);
+    }
+  }
+
+  /**
+   * Brings one member's rank roles in line with the database as it is now: the
+   * role of the rank they hold as an active member, and no other rank role of
+   * the company. Posts nothing. Safe to run twice, so a failed try is simply
+   * repeated; a member the bot cannot reach is skipped with the reason.
+   */
+  private async roleSync(
+    company: CompanyRow,
+    sync: Extract<OutboxPayload, { type: "rank_roles_sync" }>,
+  ) {
+    const { store, discord, access, now } = this.deps;
+    const rankRoles = await store.rankRoleIds(company.id);
+    if (rankRoles.length === 0 && sync.retiredRoleIds.length === 0) {
+      return `Skipped: no rank of ${company.name} has a Discord role.`;
+    }
+    const server = await access.server(company);
+    if (!server.ok) return `Skipped: ${server.reason}`;
+
+    const userId = await store.driverDiscordId(sync.driverId);
+    if (!userId) {
+      return `Skipped: ${sync.driverName} has no Discord account linked, so no role was changed.`;
+    }
+    const held = await discord.memberRoleIds(server.guildId, userId);
+    if (held === null) {
+      return `Skipped: ${sync.driverName} is not in the Discord server, so no role was changed.`;
+    }
+
+    const target = await store.rankRoleTarget(company.id, sync.driverId);
+    const { problems } = await syncRankRoles({ discord, store }, company, server.guildId, {
+      userId,
+      held,
+      want: target.active ? target.roleId : null,
+      retired: sync.retiredRoleIds,
+      reason: target.active
+        ? `Tacho rank: ${target.rankName ?? "none yet"}`
+        : `Tacho: no longer a member of ${company.name}`,
+    });
+    for (const problem of problems) await store.recordProblem(company.id, problem, now());
+    return problems.length > 0 ? problems.join(" ") : null;
   }
 
   private async delivery(

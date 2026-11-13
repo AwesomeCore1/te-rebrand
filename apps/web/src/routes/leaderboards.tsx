@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
+import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
 import { Skeleton } from "@te-rebrand/ui/components/skeleton";
 import { z } from "zod";
 
@@ -121,7 +121,13 @@ function LeaderboardsPage() {
                     <td className="py-3 pr-3 pl-5 text-muted-foreground">{r.place}</td>
                     <td className="max-w-0 py-3 pr-3">
                       <div className="truncate font-semibold">
-                        {r.displayName}
+                        <Link
+                          to="/driver/$driverId"
+                          params={{ driverId: r.driverId }}
+                          className="rounded-sm underline-offset-2 hover:underline"
+                        >
+                          {r.displayName}
+                        </Link>
                         {r.you && <span className="font-normal text-muted-foreground"> (you)</span>}
                       </div>
                       <div className="truncate text-[13px] text-muted-foreground">

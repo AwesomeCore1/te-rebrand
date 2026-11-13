@@ -7,6 +7,7 @@ import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
 import { actionError, CompanyLogo } from "@/components/company/bits";
+import { steamConnectHref, useSteamResult } from "@/lib/use-steam-result";
 import { useTRPC } from "@/utils/trpc";
 
 // Registering a company. Nobody types a VTC id: Tacho asks TruckersMP which VTC
@@ -22,6 +23,7 @@ function NewCompany() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const navigate = Route.useNavigate();
+  useSteamResult();
   // After "Check again", TruckersMP is asked afresh instead of from the cache.
   const [fresh, setFresh] = useState(false);
   const check = useQuery(trpc.company.registration.queryOptions({ fresh }, { retry: false }));
@@ -123,13 +125,13 @@ function Result({
           title="Link Steam first"
           action={
             // A plain link: a full-page redirect to Steam, not an API call.
-            <a href="/api/steam/connect">
+            <a href={steamConnectHref("/vtc/new")}>
               <Button>Connect Steam</Button>
             </a>
           }
         >
-          Your Steam account is how Tacho finds you on TruckersMP. You come back to your dashboard
-          afterwards; open this page again from there.
+          Your Steam account is how Tacho finds you on TruckersMP. You come back to this page
+          afterwards.
         </State>
       );
     case "unavailable":

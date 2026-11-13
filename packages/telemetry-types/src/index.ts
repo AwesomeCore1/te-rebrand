@@ -25,6 +25,29 @@ export const JobInfoSchema = z.object({
   income: z.number().int(),
 });
 
+/** Amounts are in the game's currency, like `income`. */
+const amount = z.number().int();
+/** On the same clock as the job's `started_at_ms` and `finished_at_ms`. */
+const at_ms = z.number().int().nonnegative();
+const place = z.string().max(100);
+
+/**
+ * `TimedEvent` in crates/telemetry/src/tracker.rs (a `PlayerEvent` from
+ * lib.rs with its time): something the game charged the driver for during the
+ * job. Only what the game itself reported; the tracker works nothing out.
+ */
+export const JobEventSchema = z.discriminatedUnion("type", [
+  /** `offence` is the game's own name for it, such as "speeding" or "red_signal". */
+  z.object({ type: z.literal("fine"), at_ms, offence: z.string().max(100), amount }),
+  z.object({ type: z.literal("toll"), at_ms, amount }),
+  z.object({ type: z.literal("ferry"), at_ms, source: place, target: place, amount }),
+  z.object({ type: z.literal("train"), at_ms, source: place, target: place, amount }),
+]);
+export type JobEvent = z.infer<typeof JobEventSchema>;
+
+/** More than any real job has; keeps one upload from filling the table. */
+export const MAX_JOB_EVENTS = 1000;
+
 /** `FinishedJob` in crates/telemetry/src/tracker.rs. */
 export const FinishedJobSchema = z.object({
   game: GameSchema,
@@ -39,6 +62,8 @@ export const FinishedJobSchema = z.object({
   /** Milliseconds since the tracker started; only differences are meaningful. */
   started_at_ms: z.number().int().nonnegative(),
   finished_at_ms: z.number().int().nonnegative(),
+  /** Oldest first. Trackers from before job events send no such field. */
+  events: z.array(JobEventSchema).max(MAX_JOB_EVENTS).default([]),
 });
 export type FinishedJob = z.infer<typeof FinishedJobSchema>;
 

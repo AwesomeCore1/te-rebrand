@@ -12,7 +12,7 @@
 //! Decoding is plain byte reading, so it builds and is tested on every
 //! platform. Only opening the map is Windows-only (see [`crate::source`]).
 
-use crate::{Frame, Game, GameplayEvent, JobInfo};
+use crate::{Frame, Game, GameplayEvent, JobInfo, PlayerEvent};
 
 /// Name of the memory map the plugin creates.
 pub const MAPPING_NAME: &str = "Local\\SCSTelemetry";
@@ -21,7 +21,7 @@ pub const MAPPING_NAME: &str = "Local\\SCSTelemetry";
 pub const PLUGIN_REVISION: u32 = 12;
 
 /// How many bytes of the map [`Decoder::decode`] needs: everything up to the
-/// end of the job flags. The map itself is 32 KiB; the rest (substances,
+/// end of the event flags. The map itself is 32 KiB; the rest (substances,
 /// trailers) is not read.
 pub const SNAPSHOT_LEN: usize = 4400;
 
@@ -44,13 +44,27 @@ mod offset {
     pub const DESTINATION_COMPANY: usize = 2876; // char[64]
     pub const SOURCE_CITY: usize = 3004; // char[64]
     pub const SOURCE_COMPANY: usize = 3132; // char[64]
+    pub const FINE_OFFENCE: usize = 3436; // char[32], set by the fined event
+    pub const FERRY_SOURCE: usize = 3468; // char[64], set by the ferry event
+    pub const FERRY_TARGET: usize = 3532; // char[64]
+    pub const TRAIN_SOURCE: usize = 3724; // char[64], set by the train event
+    pub const TRAIN_TARGET: usize = 3788; // char[64]
     pub const INCOME: usize = 4000; // u64
+    pub const FINE_AMOUNT: usize = 4216; // i64, set by the fined event
+    pub const TOLL_AMOUNT: usize = 4224; // i64, set by the tollgate event
+    pub const FERRY_AMOUNT: usize = 4232; // i64
+    pub const TRAIN_AMOUNT: usize = 4240; // i64
     pub const ON_JOB: usize = 4300; // bool
     pub const JOB_CANCELLED: usize = 4302; // bool, flips on every cancelled job
     pub const JOB_DELIVERED: usize = 4303; // bool, flips on every delivered job
+    pub const FINED: usize = 4304; // bool, flips on every fine
+    pub const TOLLGATE: usize = 4305; // bool, flips on every toll paid
+    pub const FERRY: usize = 4306; // bool, flips on every ferry taken
+    pub const TRAIN: usize = 4307; // bool, flips on every train taken
 }
 
 const STRING_LEN: usize = 64;
+const OFFENCE_LEN: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScsError {
@@ -64,10 +78,15 @@ pub enum ScsError {
 
 /// Turns successive snapshots of the memory map into frames.
 ///
-/// It keeps a little state between snapshots, for two reasons:
+/// It keeps a little state between snapshots, for three reasons:
 ///
 /// - The plugin signals "job delivered" and "job cancelled" by flipping a
-///   flag, so an event is a change from the previous snapshot.
+///   flag, so an event is a change from the previous snapshot. Fines, tolls,
+///   ferries and trains are signalled the same way.
+/// - For those four the plugin flips the flag first and writes the details
+///   (amount, offence, names) after it, so the snapshot that catches the flip
+///   can still hold the details of the previous fine. They are read one
+///   snapshot later, when the plugin is long done, and reported then.
 /// - A job's details are written while the game is paused (in the job list
 ///   or while a save loads), when the odometer still shows whatever it showed
 ///   before. A new job is therefore held back until the game has been
@@ -87,13 +106,26 @@ pub struct Decoder {
     /// Cargo damage last seen during the job. The plugin clears the live
     /// value in the same step as it flips an end-of-job flag.
     last_cargo_damage: f64,
+    /// Whose flag flipped in the previous snapshot: reported in this one.
+    due: [bool; PLAYER_FLAGS.len()],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Flags {
     delivered: bool,
     cancelled: bool,
+    /// In the order of [`PLAYER_FLAGS`].
+    player: [bool; PLAYER_FLAGS.len()],
 }
+
+/// The flags behind [`PlayerEvent`]s: fine, toll, ferry, train. Events of one
+/// snapshot are reported in this order.
+const PLAYER_FLAGS: [usize; 4] = [
+    offset::FINED,
+    offset::TOLLGATE,
+    offset::FERRY,
+    offset::TRAIN,
+];
 
 impl Decoder {
     pub fn new() -> Self {
@@ -138,12 +170,19 @@ impl Decoder {
         let flags = Flags {
             delivered: read_bool(map, offset::JOB_DELIVERED),
             cancelled: read_bool(map, offset::JOB_CANCELLED),
+            player: PLAYER_FLAGS.map(|flag| read_bool(map, flag)),
         };
-        let gameplay_event = match self.flags.replace(flags) {
+        let prev = self.flags.replace(flags);
+        let gameplay_event = match prev {
             Some(prev) if prev.delivered != flags.delivered => Some(GameplayEvent::JobDelivered),
             Some(prev) if prev.cancelled != flags.cancelled => Some(GameplayEvent::JobCancelled),
             _ => None,
         };
+        let flipped = match prev {
+            Some(prev) => std::array::from_fn(|i| prev.player[i] != flags.player[i]),
+            None => [false; PLAYER_FLAGS.len()],
+        };
+        let player_events = read_player_events(map, std::mem::replace(&mut self.due, flipped));
 
         let live_damage = unit_interval(read_f32(map, offset::CARGO_DAMAGE));
         let cargo_damage = match gameplay_event {
@@ -176,6 +215,7 @@ impl Decoder {
             job,
             multiplayer: false,
             gameplay_event,
+            player_events,
         }))
     }
 
@@ -202,11 +242,11 @@ fn read_job(map: &[u8]) -> Option<JobInfo> {
         return None;
     }
     let job = JobInfo {
-        source_city: read_string(map, offset::SOURCE_CITY),
-        destination_city: read_string(map, offset::DESTINATION_CITY),
-        source_company: read_string(map, offset::SOURCE_COMPANY),
-        destination_company: read_string(map, offset::DESTINATION_COMPANY),
-        cargo: read_string(map, offset::CARGO),
+        source_city: read_string(map, offset::SOURCE_CITY, STRING_LEN),
+        destination_city: read_string(map, offset::DESTINATION_CITY, STRING_LEN),
+        source_company: read_string(map, offset::SOURCE_COMPANY, STRING_LEN),
+        destination_company: read_string(map, offset::DESTINATION_COMPANY, STRING_LEN),
+        cargo: read_string(map, offset::CARGO, STRING_LEN),
         cargo_mass_kg: finite(read_f32(map, offset::CARGO_MASS_KG)).max(0.0),
         planned_distance_km: f64::from(read_u32(map, offset::PLANNED_DISTANCE_KM)),
         income: i64::try_from(read_u64(map, offset::INCOME)).unwrap_or(i64::MAX),
@@ -214,6 +254,39 @@ fn read_job(map: &[u8]) -> Option<JobInfo> {
     let complete =
         !job.source_city.is_empty() && !job.destination_city.is_empty() && !job.cargo.is_empty();
     complete.then_some(job)
+}
+
+/// The events that are `due` (in the order of [`PLAYER_FLAGS`]), from the
+/// details the plugin wrote for the last event of each kind.
+fn read_player_events(map: &[u8], due: [bool; PLAYER_FLAGS.len()]) -> Vec<PlayerEvent> {
+    let [fine, toll, ferry, train] = due;
+    let mut events = Vec::new();
+    if fine {
+        events.push(PlayerEvent::Fine {
+            offence: read_string(map, offset::FINE_OFFENCE, OFFENCE_LEN),
+            amount: read_i64(map, offset::FINE_AMOUNT),
+        });
+    }
+    if toll {
+        events.push(PlayerEvent::Toll {
+            amount: read_i64(map, offset::TOLL_AMOUNT),
+        });
+    }
+    if ferry {
+        events.push(PlayerEvent::Ferry {
+            source: read_string(map, offset::FERRY_SOURCE, STRING_LEN),
+            target: read_string(map, offset::FERRY_TARGET, STRING_LEN),
+            amount: read_i64(map, offset::FERRY_AMOUNT),
+        });
+    }
+    if train {
+        events.push(PlayerEvent::Train {
+            source: read_string(map, offset::TRAIN_SOURCE, STRING_LEN),
+            target: read_string(map, offset::TRAIN_TARGET, STRING_LEN),
+            amount: read_i64(map, offset::TRAIN_AMOUNT),
+        });
+    }
+    events
 }
 
 fn bytes<const N: usize>(map: &[u8], at: usize) -> [u8; N] {
@@ -234,6 +307,10 @@ fn read_u64(map: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(bytes(map, at))
 }
 
+fn read_i64(map: &[u8], at: usize) -> i64 {
+    i64::from_le_bytes(bytes(map, at))
+}
+
 fn read_f32(map: &[u8], at: usize) -> f32 {
     f32::from_le_bytes(bytes(map, at))
 }
@@ -242,11 +319,11 @@ fn read_f64(map: &[u8], at: usize) -> f64 {
     f64::from_le_bytes(bytes(map, at))
 }
 
-/// A fixed 64-byte UTF-8 field, ending at the first NUL (or not at all,
-/// when the text fills the field).
-fn read_string(map: &[u8], at: usize) -> String {
-    let field = &map[at..at + STRING_LEN];
-    let len = field.iter().position(|&b| b == 0).unwrap_or(STRING_LEN);
+/// A fixed UTF-8 field of `field_len` bytes, ending at the first NUL (or not
+/// at all, when the text fills the field).
+fn read_string(map: &[u8], at: usize, field_len: usize) -> String {
+    let field = &map[at..at + field_len];
+    let len = field.iter().position(|&b| b == 0).unwrap_or(field_len);
     String::from_utf8_lossy(&field[..len]).trim().to_owned()
 }
 
@@ -273,7 +350,7 @@ fn unit_interval(v: f32) -> f64 {
 /// A hand-built memory map, for tests here and in [`crate::source`].
 #[cfg(test)]
 pub(crate) mod testing {
-    use super::{offset, PLUGIN_REVISION, SNAPSHOT_LEN, STRING_LEN};
+    use super::{offset, OFFENCE_LEN, PLUGIN_REVISION, SNAPSHOT_LEN, STRING_LEN};
 
     #[derive(Clone)]
     pub(crate) struct FakeMap(pub Vec<u8>);
@@ -294,7 +371,13 @@ pub(crate) mod testing {
         }
 
         fn text(&mut self, at: usize, text: &str) {
-            self.put(at, &[0; STRING_LEN]);
+            self.text_in(at, STRING_LEN, text);
+        }
+
+        /// Like the plugin's `strncpy`: the text, then NULs to the end of the field.
+        fn text_in(&mut self, at: usize, field_len: usize, text: &str) {
+            assert!(text.len() <= field_len, "{text:?} does not fit the field");
+            self.0[at..at + field_len].fill(0);
             self.put(at, text.as_bytes());
         }
 
@@ -379,6 +462,42 @@ pub(crate) mod testing {
         pub fn cancel(&mut self) {
             self.end_job(offset::JOB_CANCELLED);
         }
+
+        /// The first thing the plugin does on a fine: flip the flag. The
+        /// details still say whatever the fine before this one wrote.
+        pub fn fine_flag(&mut self) {
+            self.0[offset::FINED] ^= 1;
+        }
+
+        /// The second thing: write what the fine was for and how much.
+        pub fn fine_details(&mut self, offence: &str, amount: i64) {
+            self.text_in(offset::FINE_OFFENCE, OFFENCE_LEN, offence);
+            self.put(offset::FINE_AMOUNT, &amount.to_le_bytes());
+        }
+
+        pub fn fine(&mut self, offence: &str, amount: i64) {
+            self.fine_flag();
+            self.fine_details(offence, amount);
+        }
+
+        pub fn toll(&mut self, amount: i64) {
+            self.0[offset::TOLLGATE] ^= 1;
+            self.put(offset::TOLL_AMOUNT, &amount.to_le_bytes());
+        }
+
+        pub fn ferry(&mut self, source: &str, target: &str, amount: i64) {
+            self.0[offset::FERRY] ^= 1;
+            self.put(offset::FERRY_AMOUNT, &amount.to_le_bytes());
+            self.text(offset::FERRY_SOURCE, source);
+            self.text(offset::FERRY_TARGET, target);
+        }
+
+        pub fn train(&mut self, source: &str, target: &str, amount: i64) {
+            self.0[offset::TRAIN] ^= 1;
+            self.put(offset::TRAIN_AMOUNT, &amount.to_le_bytes());
+            self.text(offset::TRAIN_SOURCE, source);
+            self.text(offset::TRAIN_TARGET, target);
+        }
     }
 }
 
@@ -386,7 +505,7 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::FakeMap;
     use super::*;
-    use crate::tracker::JobStatus;
+    use crate::tracker::{JobStatus, TimedEvent};
     use crate::{JobEvent, JobTracker};
 
     /// Decodes each map in turn, 250 ms apart, like the app's polling loop.
@@ -427,6 +546,7 @@ mod tests {
         assert_eq!(frame.position, (1200.5, -340.25));
         assert_eq!(frame.job, None);
         assert_eq!(frame.gameplay_event, None);
+        assert_eq!(frame.player_events, []);
     }
 
     #[test]
@@ -613,9 +733,17 @@ mod tests {
     fn flags_left_over_from_before_the_tracker_started_fire_nothing() {
         let mut run = Run::new();
         let mut map = FakeMap::running();
-        map.deliver(0.0); // happened before we were looking
-        assert_eq!(run.frame(&map).gameplay_event, None);
-        assert_eq!(run.frame(&map).gameplay_event, None);
+        // All of this happened before we were looking.
+        map.deliver(0.0);
+        map.fine("speeding", 550);
+        map.toll(38);
+        map.ferry("Dover", "Calais", 320);
+        map.train("Folkestone", "Calais", 265);
+        for _ in 0..3 {
+            let frame = run.frame(&map);
+            assert_eq!(frame.gameplay_event, None);
+            assert_eq!(frame.player_events, []);
+        }
     }
 
     #[test]
@@ -635,6 +763,215 @@ mod tests {
         assert_eq!(run.decoder.decode(&map.0, 0), Ok(None));
         let fresh = FakeMap::running();
         assert_eq!(run.frame(&fresh).gameplay_event, None);
+    }
+
+    /// The events of the next few snapshots of an unchanged map.
+    fn settle(run: &mut Run, map: &FakeMap) -> Vec<PlayerEvent> {
+        (0..3).flat_map(|_| run.frame(map).player_events).collect()
+    }
+
+    fn fine(offence: &str, amount: i64) -> PlayerEvent {
+        PlayerEvent::Fine {
+            offence: offence.to_owned(),
+            amount,
+        }
+    }
+
+    #[test]
+    fn a_fine_is_reported_once_with_its_offence_and_amount() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+
+        map.fine("speeding", 550);
+        assert_eq!(settle(&mut run, &map), [fine("speeding", 550)]);
+
+        // The flag flips back on the next one: also an event.
+        map.fine("red_signal", 400);
+        assert_eq!(settle(&mut run, &map), [fine("red_signal", 400)]);
+        assert_eq!(settle(&mut run, &map), []);
+    }
+
+    #[test]
+    fn a_toll_is_reported_with_its_amount() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        map.toll(38);
+        assert_eq!(settle(&mut run, &map), [PlayerEvent::Toll { amount: 38 }]);
+    }
+
+    #[test]
+    fn a_ferry_is_reported_with_both_ports_and_its_price() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        map.ferry("Dover", "Calais", 320);
+        assert_eq!(
+            settle(&mut run, &map),
+            [PlayerEvent::Ferry {
+                source: "Dover".to_owned(),
+                target: "Calais".to_owned(),
+                amount: 320,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_train_is_reported_with_both_terminals_and_its_price() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        map.train("Folkestone", "Calais", 265);
+        assert_eq!(
+            settle(&mut run, &map),
+            [PlayerEvent::Train {
+                source: "Folkestone".to_owned(),
+                target: "Calais".to_owned(),
+                amount: 265,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_ferry_and_a_train_do_not_read_each_others_fields() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        map.ferry("Dover", "Calais", 320);
+        map.train("Folkestone", "Coquelles", 265);
+        map.toll(38);
+        map.fine("no_lights", 150);
+        // All four in one snapshot come out in a fixed order.
+        assert_eq!(
+            settle(&mut run, &map),
+            [
+                fine("no_lights", 150),
+                PlayerEvent::Toll { amount: 38 },
+                PlayerEvent::Ferry {
+                    source: "Dover".to_owned(),
+                    target: "Calais".to_owned(),
+                    amount: 320,
+                },
+                PlayerEvent::Train {
+                    source: "Folkestone".to_owned(),
+                    target: "Coquelles".to_owned(),
+                    amount: 265,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn an_event_is_read_after_the_plugin_has_written_its_details() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        map.fine("speeding", 550);
+        settle(&mut run, &map);
+
+        // Caught the plugin between flipping the flag and writing the
+        // details: the map still describes the speeding fine.
+        map.fine_flag();
+        assert_eq!(run.frame(&map).player_events, []);
+        map.fine_details("red_signal", 400);
+        assert_eq!(run.frame(&map).player_events, [fine("red_signal", 400)]);
+        assert_eq!(run.frame(&map).player_events, []);
+    }
+
+    #[test]
+    fn an_offence_that_fills_its_field_stops_at_the_field() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        // The offence is 32 bytes, half of the other text fields, and the
+        // ferry's source port sits right behind it.
+        let long = "x".repeat(32);
+        map.ferry("Dover", "Calais", 320);
+        map.fine(&long, 1);
+        assert_eq!(settle(&mut run, &map)[0], fine(&long, 1));
+    }
+
+    #[test]
+    fn a_game_restart_is_not_a_fine() {
+        let mut run = Run::new();
+        let mut map = FakeMap::running();
+        run.frame(&map);
+        map.fine("speeding", 550);
+        map.toll(38);
+        // Seen, but the game closes before the details are read.
+        assert_eq!(run.frame(&map).player_events, []);
+        map.sdk_active(false);
+        assert_eq!(run.decoder.decode(&map.0, 0), Ok(None));
+
+        // It starts again with a zeroed map: every flag is back to false,
+        // and what was waiting is forgotten.
+        let fresh = FakeMap::running();
+        assert_eq!(settle(&mut run, &fresh), []);
+    }
+
+    #[test]
+    fn only_what_happens_during_the_job_ends_up_on_it() {
+        let mut run = Run::new();
+        let mut tracker = JobTracker::new();
+        let mut events = Vec::new();
+        let mut map = FakeMap::running();
+        let mut step = |map: &FakeMap, events: &mut Vec<JobEvent>| {
+            let frame = run.frame(map);
+            events.extend(tracker.push(&frame));
+            frame.t_ms
+        };
+
+        // Fined on the way to pick up the job.
+        step(&map, &mut events);
+        map.fine("wrong_way", 250);
+        step(&map, &mut events);
+        step(&map, &mut events);
+
+        map.take_job();
+        step(&map, &mut events);
+        step(&map, &mut events); // the job is reported from here on
+
+        map.toll(38);
+        step(&map, &mut events);
+        let toll_at = step(&map, &mut events);
+        map.fine("speeding", 550);
+        step(&map, &mut events);
+        let fine_at = step(&map, &mut events);
+
+        // A fine seen one snapshot before the delivery is read in the
+        // snapshot of the delivery itself, and still counts.
+        map.fine("red_signal", 400);
+        step(&map, &mut events);
+        map.deliver(0.0);
+        let delivered_at = step(&map, &mut events);
+
+        // After the delivery, on the way out of the yard.
+        map.toll(12);
+        step(&map, &mut events);
+        step(&map, &mut events);
+
+        let Some(JobEvent::Finished(job)) = events.last() else {
+            panic!("expected a finished job, got {events:?}");
+        };
+        assert_eq!(
+            job.events,
+            [
+                TimedEvent {
+                    at_ms: toll_at,
+                    event: PlayerEvent::Toll { amount: 38 },
+                },
+                TimedEvent {
+                    at_ms: fine_at,
+                    event: fine("speeding", 550),
+                },
+                TimedEvent {
+                    at_ms: delivered_at,
+                    event: fine("red_signal", 400),
+                },
+            ]
+        );
+        assert!(job.started_at_ms < toll_at && delivered_at == job.finished_at_ms);
     }
 
     #[test]

@@ -5,6 +5,7 @@ import type { Database } from "@te-rebrand/db";
 import type { JobUpload, PositionUpdate } from "@te-rebrand/telemetry-types";
 
 import { announceDelivery, lockDriver } from "./deliveries";
+import { jobEventRows } from "./job-events";
 
 const TOKEN_PREFIX = "te_dev_";
 const PAIRING_TTL_S = 10 * 60;
@@ -174,6 +175,10 @@ export async function ingestJob(
     const created = await tx.job.create({
       data: jobRow(device, upload, reasons, membership?.companyId ?? null),
     });
+    // Fines, tolls, ferries and trains, as the game reported them. Stored with
+    // the job, so a retry (which stops at the job found above) adds none.
+    const events = jobEventRows(created.id, upload);
+    if (events.length > 0) await tx.jobEvent.createMany({ data: events });
     // Delivery feed and rank-up for the Discord bot. Flagged jobs wait for a
     // manager; cancelled and solo jobs are never announced.
     await announceDelivery(tx, created);

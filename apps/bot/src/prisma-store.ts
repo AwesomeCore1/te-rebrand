@@ -2,9 +2,17 @@
 // the old state in the WHERE clause, so only one caller can win them.
 import { parseCompanySettings } from "@te-rebrand/api/company-settings";
 import { COUNTS } from "@te-rebrand/api/job-counts";
+import { driverRank } from "@te-rebrand/api/ranks";
 import type { Database } from "@te-rebrand/db";
 
-import type { CompanyRow, MonthlyDriver, PostState, PostStatus, Store } from "./store";
+import {
+  ROLE_SYNC,
+  type CompanyRow,
+  type MonthlyDriver,
+  type PostState,
+  type PostStatus,
+  type Store,
+} from "./store";
 
 const COMPANY = {
   id: true,
@@ -38,10 +46,11 @@ const clip = (text: string | null) => (text === null ? null : text.slice(0, 1000
 
 export function prismaStore(db: Database): Store {
   return {
-    pendingOutbox(now, limit) {
+    pendingOutbox(now, limit, lane) {
       return db.outboxEvent.findMany({
         where: {
           processedAt: null,
+          type: lane === "roles" ? ROLE_SYNC : { not: ROLE_SYNC },
           OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -147,6 +156,21 @@ export function prismaStore(db: Database): Store {
         select: { discordRoleId: true },
       });
       return ranks.flatMap((r) => (r.discordRoleId ? [r.discordRoleId] : []));
+    },
+
+    async rankRoleTarget(companyId, driverId) {
+      const member = await db.membership.findFirst({
+        where: { companyId, driverId, status: "active" },
+        select: { id: true },
+      });
+      if (!member) return { active: false, rankName: null, roleId: null };
+      // The same ladder logic as the website: never worked out a second way.
+      const { current } = await driverRank(db, companyId, driverId);
+      return {
+        active: true,
+        rankName: current?.name ?? null,
+        roleId: current?.discordRoleId ?? null,
+      };
     },
 
     async monthlyTop(companyId, from, to, limit) {

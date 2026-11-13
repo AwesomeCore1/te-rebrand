@@ -144,9 +144,13 @@ function Dashboard() {
               {recentJobs.map((j) => (
                 <li key={j.id} className="flex items-center gap-3 px-5 py-3.5">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15px] font-semibold">
+                    <Link
+                      to="/jobs/$jobId"
+                      params={{ jobId: j.id }}
+                      className="block truncate text-[15px] font-semibold underline-offset-4 hover:underline"
+                    >
                       {j.sourceCity} <span className="text-signal-ink">→</span> {j.destCity}
-                    </div>
+                    </Link>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
                       <GameBadge game={j.game === "ets2" ? "ETS2" : "ATS"} />
                       <span>
@@ -480,9 +484,14 @@ function GetOnTheRoad(props: {
       title: "Install and link the tracker",
       body: "Windows 10 and 11. Install it, choose Link account, and confirm the code it shows. Then it sits in the tray and logs every delivery.",
       action: (primary) => (
-        <Link to="/tracker/link">
-          <Button variant={primary ? "default" : "outline"}>Enter the tracker's code</Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/download">
+            <Button variant={primary ? "default" : "outline"}>Get the tracker</Button>
+          </Link>
+          <Link to="/tracker/link">
+            <Button variant="outline">Enter the tracker's code</Button>
+          </Link>
+        </div>
       ),
     },
     {

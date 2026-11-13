@@ -18,6 +18,7 @@ import {
   saveError,
   Segmented,
 } from "@/components/admin/admin-page";
+import { BotStatus } from "@/components/admin/bot-status";
 import { Markdown } from "@/components/markdown";
 import { getDiscordClientId } from "@/functions/get-discord-client-id";
 import { botInviteUrl, isDiscordId } from "@/lib/discord";
@@ -355,6 +356,7 @@ function SettingsForm({ company, loaded }: { company: AdminCompany; loaded: Load
           Rank roles are set per rank, on the Ranks tab. In your server's role list, keep the Tacho
           role above the rank roles, or Discord won't let the bot hand them out.
         </p>
+        <BotStatus companyId={company.id} />
       </Section>
 
       {!locked && (

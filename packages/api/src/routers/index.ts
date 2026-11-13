@@ -10,9 +10,11 @@ import { approvePairing, livePositions } from "../tracker";
 import { applicationsRouter } from "./applications";
 import { companyRouter } from "./company";
 import { companyAdminRouter } from "./company-admin";
+import { jobsRouter } from "./jobs";
 import { leaderboardsRouter } from "./leaderboards";
 import { liveRouter } from "./live";
 import { membershipsRouter } from "./memberships";
+import { profilesRouter } from "./profiles";
 
 // Only delivered, unflagged jobs count. Whether cancelled jobs' km count is an
 // open decision in docs/PLAN.md; change it here when it's made.
@@ -188,11 +190,13 @@ export const appRouter = router({
   company: companyRouter,
   applications: applicationsRouter,
   memberships: membershipsRouter,
+  jobs: jobsRouter,
   leaderboard: leaderboardRouter,
   events: eventsRouter,
   live: liveRouter,
   admin: companyAdminRouter,
   leaderboards: leaderboardsRouter,
+  profiles: profilesRouter,
   /** Public live map: only drivers who allow it. */
   livePositions: publicProcedure.query(() =>
     livePositions().map(({ driverId, displayName, game, x, z, speed_kmh, server }) => ({

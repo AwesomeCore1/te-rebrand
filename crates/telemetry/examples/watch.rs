@@ -75,6 +75,12 @@ fn main() -> std::io::Result<()> {
             state = now;
         }
 
+        // Fines, tolls, ferries and trains, as the game reports them. Only
+        // the ones during a job are kept; they are listed again when it ends.
+        for event in &frame.player_events {
+            println!("GAME EVENT    {event:?}");
+        }
+
         for event in tracker.push(&frame) {
             match event {
                 JobEvent::Started { job, .. } => println!(
@@ -88,17 +94,27 @@ fn main() -> std::io::Result<()> {
                     job.planned_distance_km,
                     job.income,
                 ),
-                JobEvent::Finished(job) => println!(
-                    "JOB FINISHED  {:?}: {} to {}, {:.1} km driven (odometer {:.1} to {:.1}), top speed {:.0} km/h, cargo damage {:.1} %",
-                    job.status,
-                    job.job.source_city,
-                    job.job.destination_city,
-                    job.driven_km,
-                    job.odometer_start_km,
-                    job.odometer_end_km,
-                    job.max_speed_kmh,
-                    job.cargo_damage * 100.0,
-                ),
+                JobEvent::Finished(job) => {
+                    println!(
+                        "JOB FINISHED  {:?}: {} to {}, {:.1} km driven (odometer {:.1} to {:.1}), top speed {:.0} km/h, cargo damage {:.1} %, {} events",
+                        job.status,
+                        job.job.source_city,
+                        job.job.destination_city,
+                        job.driven_km,
+                        job.odometer_start_km,
+                        job.odometer_end_km,
+                        job.max_speed_kmh,
+                        job.cargo_damage * 100.0,
+                        job.events.len(),
+                    );
+                    for event in &job.events {
+                        println!(
+                            "              {:>6.0} s in: {:?}",
+                            event.at_ms.saturating_sub(job.started_at_ms) as f64 / 1000.0,
+                            event.event,
+                        );
+                    }
+                }
             }
         }
 
