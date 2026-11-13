@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { refreshTruckersmpId } from "@te-rebrand/api/memberships";
 
 import { ENV } from "../../../env.server";
 import { STEAM_STATE_COOKIE, verifySteamCallback } from "../../../lib/steam";
@@ -41,11 +42,13 @@ export const Route = createFileRoute("/api/steam/callback")({
         const owner = await db.driver.findUnique({ where: { steamId64 } });
         if (owner && owner.userId !== session.user.id) return back("taken");
 
-        await db.driver.upsert({
+        const driver = await db.driver.upsert({
           where: { userId: session.user.id },
           create: { userId: session.user.id, displayName: session.user.name, steamId64 },
           update: { steamId64 },
         });
+        // Find them on TruckersMP in the background; the redirect doesn't wait for it.
+        void refreshTruckersmpId(db, driver).catch(() => undefined);
         return back("linked");
       },
     },

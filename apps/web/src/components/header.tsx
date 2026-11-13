@@ -7,11 +7,13 @@ import { DiscordIcon, TachoMark } from "./landing/bits";
 import { ThemeToggle } from "./theme-toggle";
 import UserMenu from "./user-menu";
 
-const SECTIONS = [
+const SECTIONS: { href: string; label: string; className?: string }[] = [
   { href: "/#how-it-works", label: "How it works" },
   { href: "/#for-vtcs", label: "For VTCs" },
-  { href: "/#faq", label: "Questions" },
   { href: "/events", label: "Convoys" },
+  // Hidden on tablets, where the links don't all fit beside the login button.
+  { href: "/map", label: "Live map", className: "hidden lg:block" },
+  { href: "/leaderboards", label: "Leaderboards", className: "hidden lg:block" },
 ];
 
 /** A floating dark pill, the same on the landing page and in the app. */
@@ -36,10 +38,16 @@ export default function Header() {
             <>
               <NavLink to="/dashboard">Dashboard</NavLink>
               <NavLink to="/events">Convoys</NavLink>
+              <NavLink to="/map">Live map</NavLink>
+              <NavLink to="/leaderboards">Leaderboards</NavLink>
             </>
           ) : (
             SECTIONS.map((s) => (
-              <a key={s.href} href={s.href} className="nav-link rounded-md px-3 py-2 text-[14px]">
+              <a
+                key={s.href}
+                href={s.href}
+                className={`nav-link rounded-md px-3 py-2 text-[14px] ${s.className ?? ""}`}
+              >
                 <span className="nav-link-label">{s.label}</span>
               </a>
             ))
@@ -65,7 +73,13 @@ export default function Header() {
   );
 }
 
-function NavLink({ to, children }: { to: "/dashboard" | "/events"; children: string }) {
+function NavLink({
+  to,
+  children,
+}: {
+  to: "/dashboard" | "/events" | "/map" | "/leaderboards";
+  children: string;
+}) {
   return (
     <Link to={to} className="nav-link rounded-md px-3 py-2 text-[14px]">
       <span className="nav-link-label">{children}</span>

@@ -16,7 +16,8 @@ export default defineConfig({
     varlockVitePlugin({ ssrInjectMode: "auto-load" }),
     tailwindcss(),
     tanstackStart(),
-    nitro({ preset: "node-server" }),
+    // WebSocket: the live map stream (src/routes/api/live/ws.ts).
+    nitro({ preset: "node-server", features: { websocket: true } }),
     viteReact(),
   ],
 });

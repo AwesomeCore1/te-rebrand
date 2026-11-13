@@ -1,12 +1,18 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { companyProcedure, driverProcedure, publicProcedure, router } from "../index";
+import { driverProcedure, publicProcedure, router } from "../index";
 import { event as tmpEvent, TruckersMpError } from "@te-rebrand/truckersmp";
 
 import { tachoConvoys } from "../convoys";
 import { driverDashboard } from "../dashboard";
 import { approvePairing, livePositions } from "../tracker";
+import { applicationsRouter } from "./applications";
+import { companyRouter } from "./company";
+import { companyAdminRouter } from "./company-admin";
+import { leaderboardsRouter } from "./leaderboards";
+import { liveRouter } from "./live";
+import { membershipsRouter } from "./memberships";
 
 // Only delivered, unflagged jobs count. Whether cancelled jobs' km count is an
 // open decision in docs/PLAN.md; change it here when it's made.
@@ -109,72 +115,6 @@ const trackerRouter = router({
     }),
 });
 
-const companyRouter = router({
-  bySlug: publicProcedure.input(z.object({ slug: z.string() })).query(async ({ ctx, input }) => {
-    const company = await ctx.db.company.findUnique({
-      where: { slug: input.slug },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        tag: true,
-        logoUrl: true,
-        verifiedAt: true,
-        _count: { select: { memberships: { where: { status: "active" } } } },
-      },
-    });
-    if (!company) throw new TRPCError({ code: "NOT_FOUND" });
-    return company;
-  }),
-
-  members: companyProcedure("driver").query(({ ctx }) =>
-    ctx.db.membership.findMany({
-      where: { companyId: ctx.companyId, status: "active" },
-      select: {
-        id: true,
-        role: true,
-        joinedAt: true,
-        driver: { select: { id: true, displayName: true } },
-      },
-      orderBy: { joinedAt: "asc" },
-    }),
-  ),
-
-  flaggedJobs: companyProcedure("manager").query(({ ctx }) =>
-    ctx.db.job.findMany({
-      where: { companyId: ctx.companyId, status: "flagged" },
-      include: { driver: { select: { displayName: true } } },
-      orderBy: { finishedAt: "desc" },
-      take: 100,
-    }),
-  ),
-
-  setMemberRole: companyProcedure("owner")
-    .input(z.object({ membershipId: z.string(), role: z.enum(["manager", "driver"]) }))
-    .mutation(async ({ ctx, input }) => {
-      // Scoped by companyId, so an owner can't touch another company's rows.
-      const { count } = await ctx.db.membership.updateMany({
-        where: { id: input.membershipId, companyId: ctx.companyId, role: { not: "owner" } },
-        data: { role: input.role },
-      });
-      if (count === 0) throw new TRPCError({ code: "NOT_FOUND" });
-    }),
-
-  livePositions: companyProcedure("driver").query(({ ctx }) =>
-    livePositions({ companyId: ctx.companyId }).map(
-      ({ driverId, displayName, game, x, z, speed_kmh, server }) => ({
-        driverId,
-        displayName,
-        game,
-        x,
-        z,
-        speed_kmh,
-        server,
-      }),
-    ),
-  ),
-});
-
 const eventsRouter = router({
   /** Upcoming convoys hosted by VTCs on Tacho. Public, like the events on TruckersMP. */
   list: publicProcedure.query(({ ctx }) => tachoConvoys(ctx.db, { limit: 40 })),
@@ -246,8 +186,13 @@ export const appRouter = router({
   driver: driverRouter,
   tracker: trackerRouter,
   company: companyRouter,
+  applications: applicationsRouter,
+  memberships: membershipsRouter,
   leaderboard: leaderboardRouter,
   events: eventsRouter,
+  live: liveRouter,
+  admin: companyAdminRouter,
+  leaderboards: leaderboardsRouter,
   /** Public live map: only drivers who allow it. */
   livePositions: publicProcedure.query(() =>
     livePositions().map(({ driverId, displayName, game, x, z, speed_kmh, server }) => ({

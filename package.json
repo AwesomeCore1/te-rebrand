@@ -26,6 +26,7 @@
     "check-types": "turbo run check-types",
     "dev:web": "turbo run dev -F web --",
     "dev:tracker": "bun run --cwd apps/tracker tauri dev",
+    "dev:bot": "turbo run dev -F bot --",
     "build:tracker": "bun run --cwd apps/tracker tauri build",
     "db:push": "turbo run db:push -F @te-rebrand/db --",
     "db:studio": "turbo run db:studio -F @te-rebrand/db --",
@@ -46,7 +47,8 @@
     "test:rust": "cargo test --workspace --exclude tracker",
     "check:rust": "cargo clippy --workspace --all-targets && cargo fmt --all --check",
     "db:seed": "bun run --cwd packages/db db:seed",
-    "dev:session": "bun run --cwd apps/web dev:session"
+    "dev:session": "bun run --cwd apps/web dev:session",
+    "membership:check": "bun run --cwd apps/web membership:check"
   },
   "dependencies": {
     "zod": "catalog:"

@@ -4,6 +4,8 @@
 import type { Database } from "@te-rebrand/db";
 import type { JobUpload, PositionUpdate } from "@te-rebrand/telemetry-types";
 
+import { announceDelivery, lockDriver } from "./deliveries";
+
 const TOKEN_PREFIX = "te_dev_";
 const PAIRING_TTL_S = 10 * 60;
 export const PAIRING_POLL_INTERVAL_S = 5;
@@ -155,16 +157,43 @@ export async function ingestJob(
   upload: JobUpload,
 ) {
   const reasons = flagReasons(upload);
-  // Counts for the company the driver is in right now (docs/PLAN.md: Job).
-  const membership = await db.membership.findFirst({
-    where: { driverId: device.driverId, status: "active" },
-    select: { companyId: true },
+  const key = {
+    driverId_clientJobId: { driverId: device.driverId, clientJobId: upload.client_job_id },
+  };
+  const saved = await db.$transaction(async (tx) => {
+    await lockDriver(tx, device.driverId);
+    // Idempotent: the app retries until it gets a 2xx, so a repeat is a no-op
+    // and nothing is announced twice.
+    const stored = await tx.job.findUnique({ where: key });
+    if (stored) return stored;
+    // Counts for the company the driver is in right now (docs/PLAN.md: Job).
+    const membership = await tx.membership.findFirst({
+      where: { driverId: device.driverId, status: "active" },
+      select: { companyId: true },
+    });
+    const created = await tx.job.create({
+      data: jobRow(device, upload, reasons, membership?.companyId ?? null),
+    });
+    // Delivery feed and rank-up for the Discord bot. Flagged jobs wait for a
+    // manager; cancelled and solo jobs are never announced.
+    await announceDelivery(tx, created);
+    return created;
   });
+  await db.trackerDevice.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
+  return saved;
+}
+
+function jobRow(
+  device: { id: string; driverId: string },
+  upload: JobUpload,
+  reasons: string[],
+  companyId: string | null,
+) {
   const { job } = upload;
-  const data = {
+  return {
     driverId: device.driverId,
     deviceId: device.id,
-    companyId: membership?.companyId ?? null,
+    companyId,
     clientJobId: upload.client_job_id,
     game: job.game,
     multiplayer: upload.multiplayer,
@@ -185,17 +214,9 @@ export async function ingestJob(
     finishedAt: new Date(upload.finished_at),
     status: reasons.length > 0 ? ("flagged" as const) : job.status,
     flagReasons: reasons,
+    // Kept so approving a flagged job puts back what the tracker reported.
+    reportedAs: job.status,
   };
-  // Idempotent: the app retries until it gets a 2xx, so a repeat is a no-op.
-  const saved = await db.job.upsert({
-    where: {
-      driverId_clientJobId: { driverId: device.driverId, clientJobId: upload.client_job_id },
-    },
-    create: data,
-    update: {},
-  });
-  await db.trackerDevice.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
-  return saved;
 }
 
 // ---- Live map ---------------------------------------------------------------
@@ -210,7 +231,7 @@ export type LivePosition = PositionUpdate & {
   receivedAt: number;
 };
 
-const POSITION_TTL_MS = 30_000;
+export const POSITION_TTL_MS = 30_000;
 const positions = new Map<string, LivePosition>();
 
 export function recordPosition(position: LivePosition) {

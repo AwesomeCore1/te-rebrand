@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@te-rebrand/ui/components/button";
 import { Skeleton } from "@te-rebrand/ui/components/skeleton";
-import { Check, Monitor } from "lucide-react";
+import { Check, LogOut, Monitor, Settings2 } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { actionError, ConfirmAction, roleLabel } from "@/components/company/bits";
 import { type ConvoyListItem, ConvoyRow } from "@/components/convoy-row";
 import { GameBadge } from "@/components/landing/bits";
 import { formatDistance, formatIncome, formatWhen } from "@/lib/format";
@@ -58,7 +59,11 @@ function Dashboard() {
   const unit = driver.unitPreference;
   const d = (km: number) => formatDistance(km, unit);
   const topGame = [...perGame].sort((a, b) => b.km - a.km)[0];
-  const newDriver = !company || !hasTracker || totals.allTimeJobs === 0;
+  const steamLinked = Boolean(driver.steamId64);
+  // Something is still missing before every delivery counts where it should.
+  const newDriver = !steamLinked || !company || !hasTracker || totals.allTimeJobs === 0;
+  // Nothing driven yet: the next steps stand in for the number and job panels.
+  const nothingYet = totals.allTimeJobs === 0 && recentJobs.length === 0;
 
   return (
     <Page>
@@ -96,80 +101,87 @@ function Dashboard() {
 
       {newDriver && (
         <GetOnTheRoad
-          steamLinked={Boolean(driver.steamId64)}
+          steamLinked={steamLinked}
           inCompany={Boolean(company)}
           hasTracker={hasTracker}
           hasJob={totals.allTimeJobs > 0}
         />
       )}
 
-      <section className="tabular grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="Your numbers">
-        <Stat label="This month" value={d(totals.monthKm)} sub={`${totals.monthJobs} jobs`} />
-        <Stat label="All time" value={d(totals.allTimeKm)} sub={`${totals.allTimeJobs} jobs`} />
-        <Stat
-          label="Most driven"
-          value={topGame ? (topGame.game === "ets2" ? "ETS2" : "ATS") : "None yet"}
-          sub={
-            [...perGame]
-              .sort((a, b) => b.km - a.km)
-              .map((g) => `${g.game.toUpperCase()} ${d(g.km)}`)
-              .join(" · ") || "Drive a job to start"
-          }
-        />
-        <RankStat rank={company?.rank ?? null} unit={unit} />
-      </section>
-
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <Card
-          title="Recent jobs"
-          className="min-w-0 lg:self-start"
-          empty={
-            recentJobs.length === 0
-              ? "No jobs yet. Finish a delivery in ETS2 or ATS with the tracker running."
-              : null
-          }
+      {!nothingYet && (
+        <section
+          className="tabular grid grid-cols-2 gap-3 md:grid-cols-4"
+          aria-label="Your numbers"
         >
-          <ul className="divide-y">
-            {recentJobs.map((j) => (
-              <li key={j.id} className="flex items-center gap-3 px-5 py-3.5">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15px] font-semibold">
-                    {j.sourceCity} <span className="text-signal-ink">→</span> {j.destCity}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
-                    <GameBadge game={j.game === "ets2" ? "ETS2" : "ATS"} />
-                    <span>
-                      {j.cargo}, {(j.cargoMassKg / 1000).toFixed(1)} t
-                    </span>
-                    {j.multiplayer && <span>· TruckersMP</span>}
-                    <span>· {formatWhen(j.finishedAt)}</span>
-                  </div>
-                </div>
-                <div className="tabular shrink-0 text-right">
-                  <div className="text-[15px] font-semibold">{d(j.drivenKm)}</div>
-                  <div className="mt-0.5 flex items-center justify-end gap-2 text-[13px]">
-                    <span className="hidden text-muted-foreground sm:inline">
-                      {formatIncome(j.income, j.game)}
-                    </span>
-                    <StatusPill status={j.status} reasons={j.flagReasons} />
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
+          <Stat label="This month" value={d(totals.monthKm)} sub={`${totals.monthJobs} jobs`} />
+          <Stat label="All time" value={d(totals.allTimeKm)} sub={`${totals.allTimeJobs} jobs`} />
+          <Stat
+            label="Most driven"
+            value={topGame ? (topGame.game === "ets2" ? "ETS2" : "ATS") : "None yet"}
+            sub={
+              [...perGame]
+                .sort((a, b) => b.km - a.km)
+                .map((g) => `${g.game.toUpperCase()} ${d(g.km)}`)
+                .join(" · ") || "Drive a job to start"
+            }
+          />
+          <RankStat rank={company?.rank ?? null} unit={unit} />
+        </section>
+      )}
 
-        <div className="min-w-0 space-y-6">
-          {company?.goal && <GoalCard goal={company.goal} unit={unit} />}
-          {company?.leaderboard && (
-            <LeaderboardCard board={company.leaderboard} unit={unit} companyName={company.name} />
-          )}
+      {(!nothingYet || company) && (
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Card
+            title="Recent jobs"
+            className="min-w-0 lg:self-start"
+            empty={
+              recentJobs.length === 0
+                ? "No jobs yet. Finish a delivery in ETS2 or ATS with the tracker running."
+                : null
+            }
+          >
+            <ul className="divide-y">
+              {recentJobs.map((j) => (
+                <li key={j.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-semibold">
+                      {j.sourceCity} <span className="text-signal-ink">→</span> {j.destCity}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+                      <GameBadge game={j.game === "ets2" ? "ETS2" : "ATS"} />
+                      <span>
+                        {j.cargo}, {(j.cargoMassKg / 1000).toFixed(1)} t
+                      </span>
+                      {j.multiplayer && <span>· TruckersMP</span>}
+                      <span>· {formatWhen(j.finishedAt)}</span>
+                    </div>
+                  </div>
+                  <div className="tabular shrink-0 text-right">
+                    <div className="text-[15px] font-semibold">{d(j.drivenKm)}</div>
+                    <div className="mt-0.5 flex items-center justify-end gap-2 text-[13px]">
+                      <span className="hidden text-muted-foreground sm:inline">
+                        {formatIncome(j.income, j.game)}
+                      </span>
+                      <StatusPill status={j.status} reasons={j.flagReasons} />
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <div className="min-w-0 space-y-6">
+            {company?.goal && <GoalCard goal={company.goal} unit={unit} />}
+            {company?.leaderboard && (
+              <LeaderboardCard board={company.leaderboard} unit={unit} companyName={company.name} />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <ConvoyColumns convoys={convoys} />
 
-      <AccountSection steamId={driver.steamId64} />
+      <AccountSection steamId={driver.steamId64} company={company} />
     </Page>
   );
 }
@@ -336,7 +348,7 @@ function ConvoyColumns({
 }) {
   const own = convoys.company;
   const ownEmpty = !own
-    ? "Join a VTC to see its convoys here."
+    ? null
     : !own.hasVtcId
       ? `${own.name} has no TruckersMP VTC ID yet. Add it to show the convoys you create on TruckersMP.`
       : own.unavailable
@@ -351,16 +363,22 @@ function ConvoyColumns({
       : null;
 
   return (
-    <section aria-label="Convoys" className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
-      <Card title={own ? `${own.name} convoys` : "Your VTC's convoys"} empty={ownEmpty}>
-        <ul className="divide-y">
-          {own?.events.map((e) => (
-            <li key={e.id}>
-              <ConvoyRow convoy={e} />
-            </li>
-          ))}
-        </ul>
-      </Card>
+    <section
+      aria-label="Convoys"
+      className={`grid grid-cols-[minmax(0,1fr)] gap-6 ${own ? "md:grid-cols-2" : ""}`}
+    >
+      {/* No company, no first column: an empty panel says nothing a step above doesn't. */}
+      {own && (
+        <Card title={`${own.name} convoys`} empty={ownEmpty}>
+          <ul className="divide-y">
+            {own.events.map((e) => (
+              <li key={e.id}>
+                <ConvoyRow convoy={e} />
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <Card
         title="Convoys on Tacho"
         empty={tachoEmpty}
@@ -429,56 +447,103 @@ function LeaderboardCard({
   );
 }
 
-/** The Figma "new driver" state: what's left before kilometres start counting. */
+/**
+ * The Figma "new driver" state: what's left before kilometres start counting,
+ * each step with the one thing to do next. The first open step has the amber
+ * button; the page's other buttons stay quiet.
+ */
 function GetOnTheRoad(props: {
   steamLinked: boolean;
   inCompany: boolean;
   hasTracker: boolean;
   hasJob: boolean;
 }) {
-  const steps = [
+  const steps: {
+    done: boolean;
+    title: string;
+    body: string;
+    action?: (primary: boolean) => ReactNode;
+  }[] = [
     {
       done: props.steamLinked,
-      title: "Link Steam",
-      body: "So we can find your TruckersMP profile and check your VTC.",
-    },
-    {
-      done: props.inCompany,
-      title: "Join a VTC",
-      body: "Apply to your company, or keep tracking solo.",
+      title: "Connect Steam",
+      body: "It's how Tacho finds you on TruckersMP and checks which VTC you're in.",
+      action: (primary) => (
+        // A plain link: a full-page redirect to Steam, not an API call.
+        <a href="/api/steam/connect">
+          <Button variant={primary ? "default" : "outline"}>Connect Steam</Button>
+        </a>
+      ),
     },
     {
       done: props.hasTracker,
-      title: "Install the tracker",
-      body: "Windows 10 and 11. It sits in the tray and logs every delivery.",
+      title: "Install and link the tracker",
+      body: "Windows 10 and 11. Install it, choose Link account, and confirm the code it shows. Then it sits in the tray and logs every delivery.",
+      action: (primary) => (
+        <Link to="/tracker/link">
+          <Button variant={primary ? "default" : "outline"}>Enter the tracker's code</Button>
+        </Link>
+      ),
+    },
+    {
+      done: props.inCompany,
+      title: "Create or join a company",
+      body: props.steamLinked
+        ? "Tacho looks up your VTC on TruckersMP: register it if you own it, or apply if it's already here. Driving solo works too."
+        : "Once Steam is connected, Tacho looks up your VTC on TruckersMP: register it if you own it, or apply if it's already here. Driving solo works too.",
+      action: (primary) => (
+        <Link to="/vtc/new">
+          <Button variant={primary ? "default" : "outline"}>Find your VTC</Button>
+        </Link>
+      ),
     },
     {
       done: props.hasJob,
       title: "Finish your first delivery",
-      body: "Any job in ETS2 or ATS counts.",
+      body: "Any job in ETS2 or ATS counts, on TruckersMP or in singleplayer.",
     },
   ];
   const left = steps.filter((s) => !s.done).length;
+  const next = steps.findIndex((s) => !s.done && s.action);
   return (
-    <section className="rounded-2xl border bg-card p-5 md:p-6">
-      <h2 className="text-xl font-bold">Get on the road</h2>
-      <p className="mt-1 text-[15px] text-muted-foreground">
-        {left === 1 ? "One step left" : `${left} steps left`} before your kilometres start counting.
-      </p>
-      <ol className="mt-4 grid gap-3 md:grid-cols-4">
+    <section className="overflow-hidden rounded-2xl border bg-card">
+      <div className="border-b px-5 py-4">
+        <h2 className="text-xl font-bold">Get on the road</h2>
+        <p className="mt-1 text-[15px] text-muted-foreground">
+          {left === 1 ? "One step left" : `${left} steps left`} before every kilometre counts.
+        </p>
+      </div>
+      <ol className="divide-y">
         {steps.map((s, i) => (
-          <li key={s.title} className={`rounded-xl border p-4 ${s.done ? "opacity-60" : ""}`}>
-            <div className="flex items-center gap-2 text-[15px] font-semibold">
+          <li key={s.title} className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4">
+            <div className="flex min-w-0 flex-1 basis-72 gap-3.5">
               {s.done ? (
-                <span className="flex size-5 items-center justify-center rounded-full bg-success-bg text-success">
-                  <Check className="size-3" strokeWidth={3} />
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-success-bg text-success">
+                  <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
                 </span>
               ) : (
-                <span className="tabular text-signal-ink">{i + 1}</span>
+                <span
+                  className="tabular mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary text-[13px] font-bold"
+                  aria-hidden="true"
+                >
+                  {i + 1}
+                </span>
               )}
-              {s.title}
+              <div className="min-w-0">
+                <div
+                  className={`text-[15px] font-semibold ${s.done ? "text-muted-foreground" : ""}`}
+                >
+                  {s.title}
+                  {s.done && <span className="font-normal"> · done</span>}
+                </div>
+                {!s.done && (
+                  <p className="mt-0.5 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
+                    {s.body}
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{s.body}</p>
+            {!s.done && s.action && <div className="pl-[38px] sm:pl-0">{s.action(i === next)}</div>}
           </li>
         ))}
       </ol>
@@ -486,7 +551,76 @@ function GetOnTheRoad(props: {
   );
 }
 
-function AccountSection({ steamId }: { steamId: string | null }) {
+type DashboardCompany = {
+  id: string;
+  name: string;
+  slug: string;
+  role: "owner" | "manager" | "driver";
+};
+
+/** Your company: where it lives, the admin for those who run it, and the way out. */
+function CompanyCard({ company }: { company: DashboardCompany }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const leave = useMutation(
+    trpc.memberships.leave.mutationOptions({
+      onSuccess: () => {
+        toast.success(`You left ${company.name}.`);
+        return queryClient.invalidateQueries();
+      },
+      onError: (e) => toast.error(actionError(e)),
+    }),
+  );
+
+  const runsIt = company.role !== "driver";
+  return (
+    <Card title="Company">
+      <div className="space-y-4 p-5">
+        <p className="text-[15px] leading-relaxed">
+          <span className="font-semibold">{company.name}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            · {roleLabel(company.role)}
+            {company.role === "owner" ? ". The owner can't leave yet." : ""}
+          </span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/vtc/$slug" params={{ slug: company.slug }}>
+            <Button variant="outline">Company page</Button>
+          </Link>
+          {runsIt && (
+            <Link to="/vtc/$slug/admin" params={{ slug: company.slug }}>
+              <Button variant="outline">
+                <Settings2 /> Admin
+              </Button>
+            </Link>
+          )}
+        </div>
+        {company.role !== "owner" && (
+          <ConfirmAction
+            variant="ghost"
+            label="Leave company"
+            icon={<LogOut />}
+            question={`Leave ${company.name}?`}
+            detail="Your past deliveries stay with the company. To come back you apply again."
+            confirmLabel="Leave"
+            pendingLabel="Leaving…"
+            pending={leave.isPending}
+            onConfirm={() => leave.mutate({ companyId: company.id })}
+          />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function AccountSection({
+  steamId,
+  company,
+}: {
+  steamId: string | null;
+  company: DashboardCompany | null;
+}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const devices = useQuery(trpc.tracker.devices.queryOptions());
@@ -501,7 +635,9 @@ function AccountSection({ steamId }: { steamId: string | null }) {
   );
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className={`grid gap-6 md:grid-cols-2 ${company ? "lg:grid-cols-3" : ""}`}>
+      {/* Without a company, "Create or join a company" above is the way in. */}
+      {company && <CompanyCard company={company} />}
       <Card title="Steam">
         <div className="p-5">
           {steamId ? (
@@ -515,7 +651,7 @@ function AccountSection({ steamId }: { steamId: string | null }) {
               </p>
               {/* A plain link: a full-page redirect to Steam, not an API call. */}
               <a href="/api/steam/connect">
-                <Button>Connect Steam</Button>
+                <Button variant="outline">Connect Steam</Button>
               </a>
             </div>
           )}
