@@ -4,6 +4,7 @@ import { cn } from "@te-rebrand/ui/lib/utils";
 import { ArrowRight, Pause, Radio } from "lucide-react";
 
 import { LinkPanel } from "../components/link-panel";
+import { PluginSetup } from "../components/plugin-setup";
 import {
   formatIncome,
   formatKm,
@@ -12,10 +13,29 @@ import {
   formatPercent,
   formatTonnes,
 } from "../lib/format";
+import type { Games } from "../lib/games";
 import type { Game, JobInfo, Live, Run, Status } from "../lib/status";
 
-export function LiveJob({ status, busy, run }: { status: Status; busy: boolean; run: Run }) {
+export function LiveJob({
+  status,
+  games,
+  busy,
+  run,
+  openSettings,
+}: {
+  status: Status;
+  games: Games;
+  busy: boolean;
+  run: Run;
+  openSettings: () => void;
+}) {
   const { game, live, current_job: job } = status;
+  const report = games.report;
+  // Windows, but neither game is in a Steam library: nothing to install into.
+  const noGameFound = report?.supported === true && !report.games.some((g) => g.installed);
+  // The game runs with a plugin Tacho can't read, and it is not the one Tacho ships.
+  const foreignPlugin =
+    report?.games.some((g) => g.plugin === "different" || g.plugin === "unreadable") ?? false;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -29,15 +49,23 @@ export function LiveJob({ status, busy, run }: { status: Status; busy: boolean; 
       </header>
 
       {status.game_problem && (
-        <p
+        <div
           role="alert"
-          className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
         >
-          {status.game_problem}
-        </p>
+          <p className="min-w-0 flex-1 basis-80">{status.game_problem}</p>
+          {foreignPlugin && (
+            <Button variant="outline" size="sm" className="text-foreground" onClick={openSettings}>
+              Replace it in Settings
+            </Button>
+          )}
+        </div>
       )}
 
       {!status.linked && <LinkPanel status={status} busy={busy} run={run} />}
+
+      {/* One amber action per view: linking comes first, then the plugin. */}
+      <PluginSetup games={games} primary={status.linked} />
 
       <section className="rounded-2xl border bg-card p-5">
         {job && game ? (
@@ -52,6 +80,18 @@ export function LiveJob({ status, busy, run }: { status: Status; busy: boolean; 
                 ? "Take a job in the game. It shows up here as soon as you drive off."
                 : "Start the game and Tacho picks it up on its own. You can leave this window closed."}
             </p>
+            {!game && noGameFound && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Tacho did not find ETS2 or ATS in Steam on this PC.{" "}
+                <button
+                  type="button"
+                  onClick={openSettings}
+                  className="rounded-sm font-medium text-signal-ink underline-offset-4 hover:underline"
+                >
+                  See Games in Settings
+                </button>
+              </p>
+            )}
           </div>
         )}
       </section>

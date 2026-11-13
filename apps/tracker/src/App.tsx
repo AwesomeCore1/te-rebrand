@@ -5,6 +5,8 @@ import { cn } from "@te-rebrand/ui/lib/utils";
 import { Settings as SettingsIcon, Truck, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { TrayNotice } from "./components/tray-notice";
+import { useGames } from "./lib/games";
 import type { Status } from "./lib/status";
 import { LiveJob } from "./views/live-job";
 import { Settings } from "./views/settings";
@@ -16,6 +18,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<View>("live");
+  const games = useGames();
 
   useEffect(() => {
     invoke<Status>("get_status").then(setStatus, (e) => setError(String(e)));
@@ -76,11 +79,18 @@ export default function App() {
           </p>
         )}
         {view === "live" ? (
-          <LiveJob status={status} busy={busy} run={run} />
+          <LiveJob
+            status={status}
+            games={games}
+            busy={busy}
+            run={run}
+            openSettings={() => setView("settings")}
+          />
         ) : (
-          <Settings status={status} busy={busy} run={run} />
+          <Settings status={status} games={games} busy={busy} run={run} />
         )}
       </main>
+      <TrayNotice />
     </div>
   );
 }
