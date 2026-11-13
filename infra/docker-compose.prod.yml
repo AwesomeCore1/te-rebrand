@@ -1,0 +1,151 @@
+# Production stack for one Linux VM (4 vCPU / 8 GB). See docs/DEPLOY.md.
+#
+# On the server this file sits in /opt/tacho next to Caddyfile and the
+# git-ignored .env (copy of infra/.env.example). Run from that folder:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Only Caddy publishes ports. Postgres, the web app and the bot are reachable
+# on the compose network only. The project name (container and volume
+# prefix) is COMPOSE_PROJECT_NAME in .env.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: tacho
+      POSTGRES_USER: tacho
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Sized for a quarter of the VM's memory.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - max_connections=100
+    shm_size: 256m
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tacho -d tacho"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    logging: *logging
+
+  # One-shot: applies pending Prisma migrations, then exits. web and bot wait
+  # for it to finish successfully. Uses the web image (it carries the schema
+  # and migrations of the same commit).
+  migrate:
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/web:${TAG:-latest}
+    working_dir: /app/packages/db
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://tacho:${POSTGRES_PASSWORD}@postgres:5432/tacho
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    cpus: 1
+    mem_limit: 1g
+    logging: *logging
+
+  web:
+    image: ${IMAGE_PREFIX}/web:${TAG:-latest}
+    init: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://tacho:${POSTGRES_PASSWORD}@postgres:5432/tacho
+      BETTER_AUTH_URL: https://${DOMAIN:?set DOMAIN in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in .env}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in .env}
+      STEAM_WEB_API_KEY: ${STEAM_WEB_API_KEY:-}
+      TRACKER_DOWNLOAD_URL: ${TRACKER_DOWNLOAD_URL:-}
+      LIVE_MAP_ETS2_TILE_URL: ${LIVE_MAP_ETS2_TILE_URL:-}
+      LIVE_MAP_ETS2_BOUNDS: ${LIVE_MAP_ETS2_BOUNDS:-}
+      LIVE_MAP_ETS2_MAX_ZOOM: ${LIVE_MAP_ETS2_MAX_ZOOM:-}
+      LIVE_MAP_ETS2_TILE_SIZE: ${LIVE_MAP_ETS2_TILE_SIZE:-}
+      LIVE_MAP_ETS2_ATTRIBUTION: ${LIVE_MAP_ETS2_ATTRIBUTION:-}
+      LIVE_MAP_ATS_TILE_URL: ${LIVE_MAP_ATS_TILE_URL:-}
+      LIVE_MAP_ATS_BOUNDS: ${LIVE_MAP_ATS_BOUNDS:-}
+      LIVE_MAP_ATS_MAX_ZOOM: ${LIVE_MAP_ATS_MAX_ZOOM:-}
+      LIVE_MAP_ATS_TILE_SIZE: ${LIVE_MAP_ATS_TILE_SIZE:-}
+      LIVE_MAP_ATS_ATTRIBUTION: ${LIVE_MAP_ATS_ATTRIBUTION:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # One copy only: the daily TruckersMP membership check and the live map
+    # hub run inside this process (apps/web/src/services.ts).
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    logging: *logging
+
+  # The Discord bot (apps/bot/README.md). One copy only. Without
+  # DISCORD_BOT_TOKEN it starts, says so and stays idle.
+  bot:
+    image: ${IMAGE_PREFIX}/bot:${TAG:-latest}
+    init: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://tacho:${POSTGRES_PASSWORD}@postgres:5432/tacho
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m
+    logging: *logging
+
+  # TLS (Let's Encrypt) and the only published ports. Proxies everything,
+  # WebSockets included (/api/live/ws), to web.
+  caddy:
+    image: caddy:2
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -34,3 +34,6 @@ local.db-*
 
 # Rust build output (several GB); the web and bot images don't need it
 target
+
+# Server-side deploy files (docs/DEPLOY.md); not part of any image
+infra

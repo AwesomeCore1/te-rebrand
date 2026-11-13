@@ -32,6 +32,7 @@
     "db:studio": "turbo run db:studio -F @te-rebrand/db --",
     "db:generate": "turbo run db:generate -F @te-rebrand/db --",
     "db:migrate": "turbo run db:migrate -F @te-rebrand/db --",
+    "db:migrate:deploy": "turbo run db:migrate:deploy -F @te-rebrand/db --",
     "db:start": "docker compose up -d postgres",
     "db:watch": "docker compose up postgres",
     "db:stop": "docker compose stop postgres",

@@ -45,6 +45,13 @@ jobs:
       - run: bunx oxlint
       - run: bunx oxfmt --check
       - run: bun run check-types
+      # Production applies packages/db/prisma/migrations (migrate deploy); fail if
+      # they do not produce exactly the schema, i.e. a migration is missing.
+      - name: Migrations match the Prisma schema
+        working-directory: packages/db
+        run: |
+          bunx prisma migrate deploy
+          bunx prisma migrate diff --from-config-datasource --to-schema prisma/schema --exit-code
       # The API tests create their own database (te-rebrand_test) in this Postgres.
       - run: bun run test
 

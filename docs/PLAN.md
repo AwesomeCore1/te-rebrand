@@ -95,7 +95,7 @@ Later: anti-cheat review queue, mobile app (Expo, same REST API).
 
 ## Hosting
 
-One Linux VM with Docker to start: 4 vCPU, 8 GB RAM, 40 GB SSD; Postgres 16+ (container or managed); Caddy or Traefik with Let's Encrypt (must pass WebSockets); DNS for the domain and `api.`; nightly `pg_dump` kept 14 days off-server; installer hosting (GitHub Releases); deploy key for GitHub Actions. Provider details to come.
+One Linux VM with Docker to start: 4 vCPU, 8 GB RAM, 40 GB SSD; Postgres 16+ (container or managed); Caddy or Traefik with Let's Encrypt (must pass WebSockets); DNS for the domain and `api.`; nightly `pg_dump` kept 14 days off-server; installer hosting (GitHub Releases); deploy key for GitHub Actions. Provider details to come. How it is set up and run: `docs/DEPLOY.md`.
 
 ## Roadmap
 
