@@ -3,6 +3,10 @@
 //! Mirrors `JobUploadSchema` and `PositionUpdateSchema` in
 //! packages/telemetry-types/src/index.ts. Change both together; the shared
 //! fixture tests/fixtures/job-upload.json is parsed on both sides.
+//!
+//! The job's fines, tolls, ferries and trains travel inside `job.events`,
+//! timed like `job.started_at_ms`; the API places them between `started_at`
+//! and `finished_at`.
 
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +41,8 @@ pub struct PositionUpdate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tracker::TimedEvent;
+    use crate::PlayerEvent;
 
     #[test]
     fn parses_the_fixture_shared_with_the_zod_schema() {
@@ -50,5 +56,56 @@ mod tests {
         let original: serde_json::Value =
             serde_json::from_str(include_str!("../tests/fixtures/job-upload.json")).unwrap();
         assert_eq!(back, original);
+    }
+
+    #[test]
+    fn the_fixture_has_one_event_of_each_kind() {
+        let upload: JobUpload =
+            serde_json::from_str(include_str!("../tests/fixtures/job-upload.json")).unwrap();
+        let place = |name: &str| name.to_owned();
+        assert_eq!(
+            upload.job.events,
+            [
+                TimedEvent {
+                    at_ms: 601_000,
+                    event: PlayerEvent::Toll { amount: 38 },
+                },
+                TimedEvent {
+                    at_ms: 1_501_000,
+                    event: PlayerEvent::Fine {
+                        offence: place("speeding"),
+                        amount: 550,
+                    },
+                },
+                TimedEvent {
+                    at_ms: 2_401_000,
+                    event: PlayerEvent::Ferry {
+                        source: place("Dover"),
+                        target: place("Calais"),
+                        amount: 320,
+                    },
+                },
+                TimedEvent {
+                    at_ms: 3_301_000,
+                    event: PlayerEvent::Train {
+                        source: place("Folkestone"),
+                        target: place("Calais"),
+                        amount: 265,
+                    },
+                },
+            ]
+        );
+    }
+
+    /// The offline queue of a tracker from before job events is read by the
+    /// version that replaces it.
+    #[test]
+    fn a_job_queued_without_events_still_parses() {
+        let mut old: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/job-upload.json")).unwrap();
+        old["job"].as_object_mut().unwrap().remove("events");
+        let upload: JobUpload = serde_json::from_value(old).unwrap();
+        assert_eq!(upload.job.events, []);
+        assert_eq!(upload.job.job.destination_city, "Lyon");
     }
 }

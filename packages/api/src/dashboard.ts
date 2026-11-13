@@ -1,8 +1,9 @@
 // Everything the driver dashboard shows, in one query.
 import type { Database } from "@te-rebrand/db";
 import { companyConvoys, tachoConvoys } from "./convoys";
-
-const COUNTS = { status: "delivered" } as const;
+import { currentGoal, goalTotal } from "./goals";
+import { COUNTS } from "./job-counts";
+import { driverRank } from "./ranks";
 
 function monthStart(now = new Date()) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -83,13 +84,10 @@ async function companySide(
   since: Date,
   now: Date,
 ) {
-  const [ranks, myCompanyKm, goal, board] = await Promise.all([
-    db.rank.findMany({ where: { companyId }, orderBy: { minKm: "asc" } }),
-    db.job.aggregate({ where: { driverId, companyId, ...COUNTS }, _sum: { drivenKm: true } }),
-    db.goal.findFirst({
-      where: { companyId, startAt: { lte: now }, endAt: { gte: now } },
-      orderBy: { endAt: "asc" },
-    }),
+  // Rank and goal numbers come from ranks.ts and goals.ts, like everywhere else.
+  const [rank, goal, board] = await Promise.all([
+    driverRank(db, companyId, driverId),
+    currentGoal(db, companyId, now),
     db.job.groupBy({
       by: ["driverId"],
       where: { companyId, ...COUNTS, finishedAt: { gte: since } },
@@ -99,25 +97,10 @@ async function companySide(
     }),
   ]);
 
-  // Rank: the highest one whose distance the driver has reached in this company.
-  const km = myCompanyKm._sum.drivenKm ?? 0;
-  const current = ranks.filter((r) => r.minKm <= km).at(-1) ?? null;
-  const next = ranks.find((r) => r.minKm > km) ?? null;
-
   let goalProgress = null;
   if (goal) {
-    const range = { companyId, ...COUNTS, finishedAt: { gte: goal.startAt, lte: goal.endAt } };
-    const field = goal.metric === "income" ? "income" : "drivenKm";
-    const [all, mine] = await Promise.all([
-      db.job.aggregate({ where: range, _sum: { drivenKm: true, income: true }, _count: true }),
-      db.job.aggregate({
-        where: { ...range, driverId },
-        _sum: { drivenKm: true, income: true },
-        _count: true,
-      }),
-    ]);
-    const value = (a: typeof all) => (goal.metric === "jobs" ? a._count : (a._sum[field] ?? 0));
-    goalProgress = { ...goal, done: value(all), yours: value(mine) };
+    const [done, yours] = await Promise.all([goalTotal(db, goal), goalTotal(db, goal, driverId)]);
+    goalProgress = { ...goal, done, yours };
   }
 
   const top = board.slice(0, 5);
@@ -129,7 +112,7 @@ async function companySide(
   const myPlace = board.findIndex((r) => r.driverId === driverId);
 
   return {
-    rank: { kmInCompany: km, current, next },
+    rank: { kmInCompany: rank.kmInCompany, current: rank.current, next: rank.next },
     goal: goalProgress,
     leaderboard: {
       rows: top.map((r, i) => ({

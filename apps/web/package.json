@@ -7,7 +7,10 @@
     "serve": "vite preview",
     "dev": "vite dev",
     "check-types": "vite build && tsc --noEmit",
+    "test": "bun test",
     "env:generate": "varlock codegen",
+    "dev:session": "bun scripts/dev-session.ts",
+    "membership:check": "bun scripts/membership-check.ts",
     "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/prisma/schema/auth.prisma --yes"
   },
   "dependencies": {
@@ -31,6 +34,7 @@
     "@trpc/tanstack-react-query": "^11.19.0",
     "@varlock/vite-integration": "1.5.4",
     "better-auth": "catalog:",
+    "leaflet": "1.9.4",
     "lucide-react": "^1.56.0",
     "motion": "^14.13.0",
     "next-themes": "catalog:",
@@ -51,6 +55,7 @@
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/bun": "latest",
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",

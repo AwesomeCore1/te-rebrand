@@ -14,6 +14,8 @@ function createQueryClient() {
   return new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
+        // Pages show their own "not found" state; a toast on top of it is noise.
+        if ((error as { data?: { code?: string } }).data?.code === "NOT_FOUND") return;
         toast.error(error.message, {
           action: {
             label: "retry",

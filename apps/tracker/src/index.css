@@ -1,0 +1,17 @@
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/public-sans";
+@import "@te-rebrand/ui/globals.css";
+
+/* The tracker is always dark (DESIGN.md); `class="dark"` is set in index.html. */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  /* It is an app window, not a page: no rubber-band scroll, no text cursor on labels. */
+  overscroll-behavior: none;
+  cursor: default;
+}

@@ -34,6 +34,23 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # The Discord bot (apps/bot/README.md). Run one copy only. Without
+  # DISCORD_BOT_TOKEN in apps/bot/.env it starts, says so and stays idle.
+  bot:
+    build:
+      context: .
+      dockerfile: apps/bot/Dockerfile
+    init: true
+    env_file:
+      - path: apps/bot/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/te-rebrand
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:18
     container_name: te-rebrand-postgres

@@ -8,6 +8,8 @@ const IDENTIFIER_SELECT = "http://specs.openid.net/auth/2.0/identifier_select";
 const CLAIMED_ID = /^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
 
 export const STEAM_STATE_COOKIE = "te_steam_state";
+/** The page to go back to after linking, checked with `safeReturnPath` when set and when read. */
+export const STEAM_RETURN_COOKIE = "te_steam_return";
 
 export function steamLoginUrl(baseUrl: string, state: string): string {
   const returnTo = new URL("/api/steam/callback", baseUrl);

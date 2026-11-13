@@ -16,6 +16,15 @@ pub struct Auth {
     pub driver_name: String,
 }
 
+/// Small things the app remembers. Missing fields read as their defaults.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Prefs {
+    /// The driver has been told that closing the window keeps Tacho in the tray.
+    pub tray_notice_seen: bool,
+}
+
+#[derive(Clone)]
 pub struct Store {
     dir: PathBuf,
 }
@@ -53,6 +62,14 @@ impl Store {
 
     pub fn save_queue(&self, queue: &[JobUpload]) -> io::Result<()> {
         write_private(&self.path("queue.json"), &serde_json::to_vec_pretty(queue)?)
+    }
+
+    pub fn load_prefs(&self) -> Prefs {
+        read_json(&self.path("prefs.json")).unwrap_or_default()
+    }
+
+    pub fn save_prefs(&self, prefs: &Prefs) -> io::Result<()> {
+        write_private(&self.path("prefs.json"), &serde_json::to_vec_pretty(prefs)?)
     }
 
     /// Jobs the API refused (422 etc.). Kept for support instead of being retried forever.
@@ -107,6 +124,24 @@ mod tests {
         store.save_queue(&[fixture()]).unwrap();
         let reopened = Store::new(store.dir.clone()).unwrap();
         assert_eq!(reopened.load_queue(), vec![fixture()]);
+    }
+
+    #[test]
+    fn prefs_default_to_off_and_survive_a_restart() {
+        let store = temp_store();
+        assert_eq!(store.load_prefs(), Prefs::default());
+        assert!(!store.load_prefs().tray_notice_seen);
+        store
+            .save_prefs(&Prefs {
+                tray_notice_seen: true,
+            })
+            .unwrap();
+        let reopened = Store::new(store.dir.clone()).unwrap();
+        assert!(reopened.load_prefs().tray_notice_seen);
+
+        // A file written by another version still loads.
+        fs::write(store.path("prefs.json"), br#"{"something_else": 1}"#).unwrap();
+        assert_eq!(store.load_prefs(), Prefs::default());
     }
 
     #[test]

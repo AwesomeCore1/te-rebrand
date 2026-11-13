@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Lint, types, build and tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: te-rebrand
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Placeholders: nothing here talks to Discord or Steam.
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/te-rebrand
+      BETTER_AUTH_SECRET: ci-only-secret-ci-only-secret-ci-only
+      BETTER_AUTH_URL: http://localhost:3001
+      DISCORD_CLIENT_ID: "0"
+      DISCORD_CLIENT_SECRET: ci-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in step with packageManager in package.json.
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bunx oxlint
+      - run: bunx oxfmt --check
+      - run: bun run check-types
+      # Production applies packages/db/prisma/migrations (migrate deploy); fail if
+      # they do not produce exactly the schema, i.e. a migration is missing.
+      - name: Migrations match the Prisma schema
+        working-directory: packages/db
+        run: |
+          bunx prisma migrate deploy
+          bunx prisma migrate diff --from-config-datasource --to-schema prisma/schema --exit-code
+      # The API tests create their own database (te-rebrand_test) in this Postgres.
+      - run: bun run test
+
+  rust:
+    name: Tracker and telemetry (Rust)
+    # Windows, because the game telemetry source and its tests are Windows-only.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace

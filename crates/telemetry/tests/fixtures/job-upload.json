@@ -22,6 +22,18 @@
     "max_speed_kmh": 90.0,
     "cargo_damage": 0.02,
     "started_at_ms": 1000,
-    "finished_at_ms": 3901000
+    "finished_at_ms": 3901000,
+    "events": [
+      { "at_ms": 601000, "type": "toll", "amount": 38 },
+      { "at_ms": 1501000, "type": "fine", "offence": "speeding", "amount": 550 },
+      { "at_ms": 2401000, "type": "ferry", "source": "Dover", "target": "Calais", "amount": 320 },
+      {
+        "at_ms": 3301000,
+        "type": "train",
+        "source": "Folkestone",
+        "target": "Calais",
+        "amount": 265
+      }
+    ]
   }
 }

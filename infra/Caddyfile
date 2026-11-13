@@ -1,0 +1,19 @@
+# Reverse proxy for the production stack (docker-compose.prod.yml).
+# DOMAIN and ACME_EMAIL come from the server's .env. Caddy gets and renews the
+# Let's Encrypt certificate itself and redirects HTTP to HTTPS.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Plain HTTP proxying; WebSocket upgrades (/api/live/ws) pass through as is,
+	# and the Host header is kept, which the live map's origin check relies on.
+	reverse_proxy web:3001
+
+	log {
+		output stdout
+		format console
+	}
+}

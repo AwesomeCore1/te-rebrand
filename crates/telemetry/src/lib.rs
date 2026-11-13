@@ -7,10 +7,13 @@
 //! so the logic can be tested without running the game.
 
 pub mod replay;
+pub mod scs;
 pub mod source;
 pub mod tracker;
 pub mod units;
 pub mod upload;
+#[cfg(windows)]
+mod win;
 
 pub use tracker::{JobEvent, JobTracker};
 
@@ -62,6 +65,11 @@ pub struct Frame {
     /// Set by the SDK's gameplay events for the frame where a job ends.
     #[serde(default)]
     pub gameplay_event: Option<GameplayEvent>,
+    /// Fines, tolls, ferries and trains the game reported since the previous
+    /// frame. Only what the game fired: nothing here is worked out from
+    /// speed or position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_events: Vec<PlayerEvent>,
 }
 
 /// Gameplay events the SDK fires when a job ends.
@@ -70,4 +78,32 @@ pub struct Frame {
 pub enum GameplayEvent {
     JobDelivered,
     JobCancelled,
+}
+
+/// Something the game charged the driver for: the SDK's `player.*` gameplay
+/// events. Amounts are in the game's own currency (EUR in ETS2, USD in ATS).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PlayerEvent {
+    Fine {
+        /// The SDK's name for what the driver did, such as `speeding` or
+        /// `red_signal`. Passed on as the game gave it.
+        offence: String,
+        amount: i64,
+    },
+    Toll {
+        amount: i64,
+    },
+    /// `source` and `target` are the names of the two ports.
+    Ferry {
+        source: String,
+        target: String,
+        amount: i64,
+    },
+    /// `source` and `target` are the names of the two terminals.
+    Train {
+        source: String,
+        target: String,
+        amount: i64,
+    },
 }
