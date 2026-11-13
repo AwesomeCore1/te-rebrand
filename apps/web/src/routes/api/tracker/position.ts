@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { authenticateDevice, recordPosition } from "@te-rebrand/api/tracker";
+import { recordLivePosition } from "@te-rebrand/api/live";
+import { authenticateDevice } from "@te-rebrand/api/tracker";
 import { PositionUpdateSchema } from "@te-rebrand/telemetry-types";
 
 import { json, readBody } from "../../../lib/tracker-http";
 import { db } from "../../../services";
 
 // Live map: sent every 5 s while driving. Only the latest position is kept, in memory.
+// recordLivePosition also pushes it to open maps (/api/live/ws).
 export const Route = createFileRoute("/api/tracker/position")({
   server: {
     handlers: {
@@ -18,7 +20,7 @@ export const Route = createFileRoute("/api/tracker/position")({
           where: { driverId: device.driverId, status: "active" },
           select: { companyId: true },
         });
-        recordPosition({
+        recordLivePosition({
           ...body.data,
           driverId: device.driverId,
           displayName: device.driver.displayName,

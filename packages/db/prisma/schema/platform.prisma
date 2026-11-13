@@ -36,6 +36,7 @@ enum JobStatus {
   delivered
   cancelled
   flagged
+  rejected // a manager turned down a flagged job; it never counts
 }
 
 enum GoalMetric {
@@ -88,6 +89,9 @@ model Company {
   ranks        Rank[]
   jobs         Job[]
   goals        Goal[]
+  outbox       OutboxEvent[]
+  botPosts     BotPost[]
+  botStatus    BotStatus?
 
   @@map("company")
 }
@@ -171,6 +175,12 @@ model Job {
   status        JobStatus
   /// Why the API flagged the job, if it did.
   flagReasons   String[]       @default([])
+  /// What the tracker said (delivered or cancelled), kept so that approving a
+  /// flagged job puts back the right status. Null on rows from before this.
+  reportedAs    JobStatus?
+  /// Set when a manager approved or rejected a flagged job.
+  reviewedAt    DateTime?
+  reviewedById  String?
   createdAt     DateTime       @default(now())
 
   events JobEvent[]
@@ -205,6 +215,72 @@ model Goal {
 
   @@index([companyId, endAt])
   @@map("goal")
+}
+
+/// Things that happened which the Discord bot posts about. The API writes a
+/// row; apps/bot reads unprocessed rows, oldest first, and marks them done.
+/// Payload shapes: packages/api/src/outbox.ts.
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  companyId     String
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type          String
+  payload       Json
+  createdAt     DateTime  @default(now())
+  processedAt   DateTime?
+  /// The three below are written by apps/bot only (apps/bot/src/outbox.ts).
+  /// How many times the bot started on this row.
+  attempts      Int       @default(0)
+  /// Why the last try failed, or why a processed row was skipped or cut short.
+  /// Null while a try is running.
+  lastError     String?
+  /// The bot leaves the row alone until then (a try in progress, or a wait before the next one).
+  nextAttemptAt DateTime?
+
+  @@index([processedAt, createdAt])
+  @@map("outbox_event")
+}
+
+/// What the Discord bot already posted on a schedule, so a restart never
+/// repeats it. kind "monthly_winners": key is the month ("2026-10").
+/// kind "convoy_reminder": key is "<TruckersMP event id>:<day|hour>:<meet-up time>".
+/// The row is written before the message is sent (apps/bot/src/ledger.ts).
+model BotPost {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind      String
+  key       String
+  /// pending (being sent, or the bot stopped mid-send), posted, failed (will be
+  /// retried), skipped (nothing to post), unknown (sent, but Discord never answered)
+  status    String   @default("pending")
+  detail    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, kind, key])
+  @@index([kind, createdAt])
+  @@map("bot_post")
+}
+
+/// What the Discord bot last found when it looked at a company's server, for
+/// the settings screen to show. Written by apps/bot only.
+model BotStatus {
+  companyId     String    @id
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// The server id that was checked (Company.discordGuildId at the time).
+  guildId       String?
+  /// Whether the bot may act there: an owner or manager has Manage Server in it.
+  guildOk       Boolean   @default(false)
+  /// Why not, in plain words. Null when guildOk.
+  guildReason   String?
+  checkedAt     DateTime  @default(now())
+  /// The last thing that went wrong after that check: a channel in another
+  /// server, a missing permission, a rank role above the bot's own role.
+  lastProblem   String?
+  lastProblemAt DateTime?
+
+  @@map("bot_status")
 }
 
 /// One per installed tracker, so a token can be revoked.

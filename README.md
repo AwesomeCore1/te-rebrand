@@ -12,7 +12,7 @@ Requirements: Bun, Docker, Rust (rustup) and the Tauri prerequisites (https://ta
 
 ```bash
 bun install
-bun run db:start && bun run db:push
+bun run db:start && bun run db:migrate
 bun run dev:web        # http://localhost:3001
 bun run dev:tracker    # tracker window
 bun run test:rust
@@ -20,4 +20,4 @@ bun run test:rust
 
 `apps/web/.env` holds local secrets and is git-ignored; `apps/web/.env.schema` documents the variables.
 
-See `CLAUDE.md` for conventions, `docs/PLAN.md` for the plan and `DESIGN.md` for the design system.
+Production: `docs/DEPLOY.md`. See `CLAUDE.md` for conventions, `docs/PLAN.md` for the plan and `DESIGN.md` for the design system.

@@ -26,11 +26,13 @@
     "check-types": "turbo run check-types",
     "dev:web": "turbo run dev -F web --",
     "dev:tracker": "bun run --cwd apps/tracker tauri dev",
+    "dev:bot": "turbo run dev -F bot --",
     "build:tracker": "bun run --cwd apps/tracker tauri build",
     "db:push": "turbo run db:push -F @te-rebrand/db --",
     "db:studio": "turbo run db:studio -F @te-rebrand/db --",
     "db:generate": "turbo run db:generate -F @te-rebrand/db --",
     "db:migrate": "turbo run db:migrate -F @te-rebrand/db --",
+    "db:migrate:deploy": "turbo run db:migrate:deploy -F @te-rebrand/db --",
     "db:start": "docker compose up -d postgres",
     "db:watch": "docker compose up postgres",
     "db:stop": "docker compose stop postgres",
@@ -43,9 +45,12 @@
     "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/ && bun run --cwd packages/db db:generate",
     "auth:generate": "cd apps/web && bun run auth:generate",
     "check": "oxlint && oxfmt --write",
+    "test": "bun run --filter '*' test",
     "test:rust": "cargo test --workspace --exclude tracker",
     "check:rust": "cargo clippy --workspace --all-targets && cargo fmt --all --check",
-    "db:seed": "bun run --cwd packages/db db:seed"
+    "db:seed": "bun run --cwd packages/db db:seed",
+    "dev:session": "bun run --cwd apps/web dev:session",
+    "membership:check": "bun run --cwd apps/web membership:check"
   },
   "dependencies": {
     "zod": "catalog:"

@@ -1,0 +1,28 @@
+# Used instead of the root .dockerignore when building apps/bot/Dockerfile.
+
+**/node_modules
+.git
+**/.turbo
+**/.output
+**/dist
+*.log
+
+# Rust: the tracker's shell, the telemetry crate and their build output.
+target
+crates
+apps/tracker/src-tauri
+
+docs
+infra
+.agents
+.claude
+
+Dockerfile
+**/Dockerfile
+docker-compose*.yml
+
+# Env value files never go into an image; the schemas do.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.schema

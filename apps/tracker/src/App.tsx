@@ -1,28 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState } from "react";
-import "./App.css";
+import { TachoMark } from "@te-rebrand/ui/components/brand";
+import { cn } from "@te-rebrand/ui/lib/utils";
+import { Settings as SettingsIcon, Truck, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
-// Mirrors `Status` in src-tauri/src/tracking.rs.
-type Status = {
-  linked: boolean;
-  driver_name: string | null;
-  game: "ets2" | "ats" | null;
-  current_job: { source_city: string; destination_city: string; cargo: string } | null;
-  queued: number;
-  last_result: string | null;
-  last_error: string | null;
-  pairing: { user_code: string; verification_url: string } | null;
-};
+import { TrayNotice } from "./components/tray-notice";
+import { useGames } from "./lib/games";
+import type { Status } from "./lib/status";
+import { LiveJob } from "./views/live-job";
+import { Settings } from "./views/settings";
 
-const GAME_NAMES = { ets2: "Euro Truck Simulator 2", ats: "American Truck Simulator" };
+type View = "live" | "settings";
 
-// Working screen for the tracker. The designed screens are in Figma (see DESIGN.md).
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<View>("live");
+  const games = useGames();
 
   useEffect(() => {
     invoke<Status>("get_status").then(setStatus, (e) => setError(String(e)));
@@ -32,7 +28,7 @@ export default function App() {
     };
   }, []);
 
-  async function run(command: string) {
+  const run = useCallback(async (command: string) => {
     setBusy(true);
     setError(null);
     try {
@@ -42,93 +38,110 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  if (!status) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        {error ?? "Starting…"}
+      </div>
+    );
   }
 
-  if (!status) return <main className="container">{error ?? "Starting…"}</main>;
-
   return (
-    <main className="container">
-      <h1>Tacho</h1>
+    <div className="flex h-full">
+      <aside className="flex w-56 shrink-0 flex-col border-r p-4">
+        <div className="flex items-center gap-2 px-1 text-sm font-semibold">
+          <TachoMark className="size-5" /> Tacho
+        </div>
+        <nav className="mt-6 space-y-1" aria-label="Tracker">
+          <NavItem icon={Truck} current={view === "live"} onClick={() => setView("live")}>
+            Live job
+          </NavItem>
+          <NavItem
+            icon={SettingsIcon}
+            current={view === "settings"}
+            onClick={() => setView("settings")}
+          >
+            Settings
+          </NavItem>
+        </nav>
+        <Account status={status} />
+      </aside>
 
-      <section>
-        <h2>Account</h2>
-        {status.linked ? (
-          <p>
-            Logging jobs for <strong>{status.driver_name}</strong>.{" "}
-            <button type="button" onClick={() => run("unlink")} disabled={busy}>
-              Unlink
-            </button>
+      <main className="min-w-0 flex-1 overflow-y-auto p-6">
+        {error && (
+          <p
+            role="alert"
+            className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            {error}
           </p>
-        ) : status.pairing ? (
-          <>
-            <p>
-              Your browser opened Tacho. Check that it shows this code, then click "Link tracker":
-            </p>
-            <p className="code">{status.pairing.user_code}</p>
-            <p>
-              <button
-                type="button"
-                onClick={() => status.pairing && void openUrl(status.pairing.verification_url)}
-              >
-                Open the page again
-              </button>{" "}
-              ·{" "}
-              <button type="button" onClick={() => run("cancel_link")}>
-                Cancel
-              </button>
-            </p>
-          </>
+        )}
+        {view === "live" ? (
+          <LiveJob
+            status={status}
+            games={games}
+            busy={busy}
+            run={run}
+            openSettings={() => setView("settings")}
+          />
         ) : (
-          <>
-            <p>Link this tracker to your Tacho account so your jobs are saved.</p>
-            <button type="button" onClick={() => run("start_link")} disabled={busy}>
-              Link account
-            </button>
-          </>
+          <Settings status={status} games={games} busy={busy} run={run} />
         )}
-      </section>
+      </main>
+      <TrayNotice />
+    </div>
+  );
+}
 
-      <section>
-        <h2>Game</h2>
-        <p>{status.game ? GAME_NAMES[status.game] : "Waiting for ETS2 or ATS to start."}</p>
-        {status.current_job && (
-          <p>
-            Current job: {status.current_job.source_city} to {status.current_job.destination_city},{" "}
-            {status.current_job.cargo}
-          </p>
-        )}
-      </section>
-
-      <section>
-        <h2>Uploads</h2>
-        <p>
-          {status.queued === 0
-            ? "Nothing waiting to send."
-            : `${status.queued} job${status.queued === 1 ? "" : "s"} waiting to send.`}{" "}
-          {status.queued > 0 && status.linked && (
-            <button type="button" onClick={() => run("retry_uploads")} disabled={busy}>
-              Send now
-            </button>
-          )}
-        </p>
-        {status.last_result && <p>Last job: {status.last_result}</p>}
-      </section>
-
-      {(error ?? status.last_error) && (
-        <p role="alert" className="error">
-          {error ?? status.last_error}
-        </p>
+function NavItem({
+  icon: Icon,
+  current,
+  onClick,
+  children,
+}: {
+  icon: LucideIcon;
+  current: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={current ? "page" : undefined}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-150",
+        current
+          ? "bg-secondary font-medium text-foreground"
+          : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
       )}
+    >
+      <Icon className={cn("size-4", current && "text-primary")} />
+      {children}
+    </button>
+  );
+}
 
-      {import.meta.env.DEV && (
-        <section>
-          <h2>Development</h2>
-          <p>No game on this machine? Replay a recorded Hamburg to Lyon delivery.</p>
-          <button type="button" onClick={() => run("start_replay")} disabled={busy}>
-            Replay a delivery
-          </button>
-        </section>
+/** Who this tracker logs for, pinned to the bottom of the sidebar. */
+function Account({ status }: { status: Status }) {
+  return (
+    <div className="mt-auto rounded-xl bg-secondary/70 p-3 text-xs">
+      {status.linked ? (
+        <>
+          <div className="truncate font-semibold">{status.driver_name}</div>
+          <div className="mt-1.5 flex items-center gap-1.5 text-success">
+            <span className="size-1.5 rounded-full bg-success" />
+            {status.queued === 0 ? "Linked, all sent" : `Linked, ${status.queued} waiting`}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="font-semibold">Not linked</div>
+          <div className="mt-1 text-muted-foreground">Jobs wait on this PC until you link.</div>
+        </>
       )}
-    </main>
+    </div>
   );
 }

@@ -1,21 +1,17 @@
 // A small client for the public TruckersMP API (https://truckersmp.com/developers/api).
 // No key needed. Responses are cached in memory so many VTCs and page views
 // don't turn into many requests (docs/PLAN.md asks us to be gentle with it).
+//
+// - this file: convoys and events
+// - identity.ts: players, VTCs and who is a member or owner of which
+// - client.ts: the request, the cache and the error type they share
 import { z } from "zod";
 
-const BASE = "https://api.truckersmp.com/v2";
-const SITE = "https://truckersmp.com";
-const CACHE_TTL_MS = 10 * 60_000;
+import { get, SITE, TruckersMpError, utcDate } from "./client";
 
-/** TruckersMP times look like "2026-11-13 18:00:00" and are UTC. */
-const utcDate = z.string().transform((s, ctx) => {
-  const d = new Date(`${s.replace(" ", "T")}Z`);
-  if (Number.isNaN(d.getTime())) {
-    ctx.addIssue({ code: "custom", message: `not a date: ${s}` });
-    return z.NEVER;
-  }
-  return d;
-});
+export { clearCache, TruckersMpError } from "./client";
+export * from "./identity";
+
 const place = z.object({ location: z.string().nullable(), city: z.string().nullable() }).nullable();
 
 export const EventSchema = z.object({
@@ -91,34 +87,6 @@ function normalise(e: RawEvent): TmpEvent {
   };
 }
 
-export class TruckersMpError extends Error {}
-
-const cache = new Map<string, { at: number; value: unknown }>();
-
-async function get<T extends z.ZodType>(
-  path: string,
-  schema: T,
-  fetchImpl: typeof fetch,
-): Promise<z.infer<T>> {
-  const hit = cache.get(path);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value as z.infer<T>;
-
-  const res = await fetchImpl(`${BASE}${path}`, {
-    headers: { accept: "application/json", "user-agent": "Tacho (VTC platform)" },
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!res.ok) throw new TruckersMpError(`TruckersMP ${path}: HTTP ${res.status}`);
-  const envelope = z
-    .object({ error: z.boolean(), response: z.unknown() })
-    .safeParse(await res.json());
-  if (!envelope.success) throw new TruckersMpError(`TruckersMP ${path}: unexpected response`);
-  if (envelope.data.error) throw new TruckersMpError(`TruckersMP ${path}: error response`);
-  const value = schema.safeParse(envelope.data.response);
-  if (!value.success) throw new TruckersMpError(`TruckersMP ${path}: unexpected response`);
-  cache.set(path, { at: Date.now(), value: value.data });
-  return value.data as z.infer<T>;
-}
-
 /** Skip events that don't parse instead of failing the whole list. */
 const lenientEvents = z.array(z.unknown()).transform((items) =>
   items.flatMap((item) => {
@@ -138,7 +106,7 @@ export async function hostedEvents(
   vtcId: number,
   { limit = 20, now = new Date(), fetchImpl = fetch } = {},
 ) {
-  const own = await get(`/vtc/${vtcId}/events`, lenientEvents, fetchImpl);
+  const own = await get(`/vtc/${vtcId}/events`, lenientEvents, { fetchImpl });
   // TruckersMP lists events by VTC, but keep only ones it really hosts.
   return upcomingFirst(
     own.filter((e) => e.vtc?.id === vtcId),
@@ -148,13 +116,8 @@ export async function hostedEvents(
 }
 
 export async function event(id: number, { fetchImpl = fetch } = {}) {
-  const raw = await get(`/events/${id}`, z.unknown(), fetchImpl);
+  const raw = await get(`/events/${id}`, z.unknown(), { fetchImpl });
   const parsed = EventSchema.safeParse(raw);
   if (!parsed.success) throw new TruckersMpError(`TruckersMP event ${id}: unexpected response`);
   return normalise(parsed.data);
-}
-
-/** For tests. */
-export function clearCache() {
-  cache.clear();
 }

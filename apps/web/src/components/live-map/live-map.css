@@ -1,0 +1,155 @@
+/* The live map panel is dark in both themes (DESIGN.md), so these are fixed
+   night colours, not theme tokens. Loaded after leaflet.css. */
+
+.live-map.leaflet-container {
+  background: #17110c;
+  font: inherit;
+  color: #ece4d8;
+}
+.live-map.leaflet-container:focus-visible {
+  outline: 2px solid #f5a524;
+  outline-offset: -2px;
+}
+
+/* Zoom buttons */
+.live-map .leaflet-bar {
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 10px;
+  box-shadow: none;
+}
+.live-map .leaflet-bar a,
+.live-map.leaflet-touch .leaflet-bar a {
+  width: 40px;
+  height: 40px;
+  border-bottom-color: rgb(255 255 255 / 0.1);
+  background: #241b14;
+  color: #ece4d8;
+  font: 500 20px/40px inherit;
+  transition: background-color 0.15s ease-out;
+}
+.live-map .leaflet-bar a:hover,
+.live-map .leaflet-bar a:focus-visible {
+  background: #33261b;
+  color: #fff;
+}
+.live-map .leaflet-bar a.leaflet-disabled {
+  background: #1d1611;
+  color: #6b5d50;
+}
+.live-map .leaflet-bottom.leaflet-right .leaflet-control-zoom {
+  margin: 0 12px 12px 0;
+}
+
+.live-map .leaflet-control-attribution {
+  border-top-left-radius: 8px;
+  background: rgb(18 12 7 / 0.72);
+  color: #a89d90;
+  font-size: 11px;
+}
+.live-map .leaflet-control-attribution a {
+  color: #cfc5b8;
+}
+
+/* One driver: an amber dot at the position, the label to its right. The icon
+   box itself is 0 x 0, so the dot's centre is the truck. */
+.live-marker-icon {
+  outline: none;
+}
+.live-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transform: translate(-9px, -50%);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.live-marker-dot {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #17110c;
+  border-radius: 50%;
+  background: #f5a524;
+  transition: box-shadow 0.15s ease-out;
+}
+.live-marker-label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 999px;
+  background: rgb(18 12 7 / 0.9);
+  font-size: 12.5px;
+  line-height: 1.35;
+  transition: border-color 0.15s ease-out;
+}
+.live-marker-name {
+  overflow: hidden;
+  max-width: 14ch;
+  color: #f3ece2;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.live-marker-speed {
+  color: #cfc5b8;
+  font-variant-numeric: tabular-nums;
+}
+/* Where they're playing shows for the driver you point at or picked. */
+.live-marker-where {
+  display: none;
+  color: #a89d90;
+}
+.live-marker-icon:hover .live-marker-where,
+.live-marker-icon:focus-visible .live-marker-where,
+.live-marker.is-selected .live-marker-where {
+  display: inline;
+}
+.live-marker-icon:hover .live-marker-label,
+.live-marker.is-selected .live-marker-label {
+  border-color: rgb(245 165 36 / 0.75);
+}
+/* "+3": this label also stands for three trucks hidden under it. */
+.live-marker-more {
+  color: #f5b04a;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.live-marker-more:empty {
+  display: none;
+}
+/* Too close to another label to read: only the dot, until pointed at. */
+.live-marker.is-crowded .live-marker-label {
+  display: none;
+}
+.live-marker-icon:hover .live-marker.is-crowded .live-marker-label,
+.live-marker-icon:focus-visible .live-marker.is-crowded .live-marker-label {
+  display: flex;
+}
+.live-marker.is-selected .live-marker-dot {
+  box-shadow: 0 0 0 4px rgb(245 165 36 / 0.3);
+}
+.live-marker-icon:focus-visible .live-marker-label {
+  outline: 2px solid #f5a524;
+  outline-offset: 2px;
+}
+
+/* Between two positions a truck glides. Off while zooming (set from
+   map-canvas.tsx) and for visitors who ask for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .live-map.is-gliding .leaflet-marker-icon {
+    transition: transform 5s linear;
+  }
+}
+
+/* Connection lost: what's on the map may be old. */
+.live-map .leaflet-marker-pane {
+  transition: opacity 0.2s ease-out;
+}
+.is-stale > .live-map .leaflet-marker-pane {
+  opacity: 0.45;
+}

@@ -15,7 +15,7 @@ Read `docs/PLAN.md` for the full plan (features, data model, hosting), `PRODUCT.
 ```bash
 bun install                 # JS deps for all workspaces
 bun run db:start            # Postgres in Docker
-bun run db:push             # apply the Prisma schema
+bun run db:migrate          # apply migrations; after a schema change, also creates one (see below)
 bun run db:seed -- --steam <SteamID64> [--vtc <ID>] [--other-vtc <ID>] [--solo]  # local test data; --clear removes it
 bun run dev:web             # website on http://localhost:3001
 bun run dev:tracker         # tracker app (Vite on :1420 + Tauri window, Rust hot-restarts)
@@ -27,6 +27,17 @@ bun run check-types         # TypeScript across the repo
 
 The tracker needs Rust (rustup) and the Tauri prerequisites: https://tauri.app/start/prerequisites/
 
+## Database schema changes
+
+The schema is `packages/db/prisma/schema/*.prisma`; production gets it only through the migrations in `packages/db/prisma/migrations` (the first, `*_init`, is the schema as of 2026-11-13).
+
+- **Change the schema:** edit the `.prisma` file, then `bun run db:migrate -- --name <what-changed>`. That writes a new migration folder, applies it to your local database and regenerates the client. Commit the folder with the schema change. Never edit a migration that is already on `main`.
+- **Production:** `bun run db:migrate:deploy` (`prisma migrate deploy`) applies pending migrations and nothing else. The deploy runs it for you (`migrate` service in `infra/docker-compose.prod.yml`, see `docs/DEPLOY.md`).
+- **CI** applies the migrations to an empty database and fails if they differ from the schema, so a schema change without its migration does not get merged.
+- Keep a migration safe for the image before it: the previous web image must still run on the new schema during a deploy and after a rollback (add a column, ship, drop the old one in a later release).
+- `db:push` is still fine for throwaway databases (the API tests' `te-rebrand_test`) but not for the local dev database any more: mixing push and migrate makes `db:migrate` ask to reset it.
+- **A dev database made with `db:push` before migrations existed:** if it matches the schema, mark the first migration as applied once, without running it: `cd packages/db && bunx prisma migrate resolve --applied 20261113080658_init`. Otherwise reset it with `bunx prisma migrate reset` (deletes its data).
+
 ## Rules that hold everywhere
 
 - **Distances are stored in km.** Miles are only a display conversion (1 mi = 1.609344 km). Never store miles.
@@ -34,7 +45,9 @@ The tracker needs Rust (rustup) and the Tauri prerequisites: https://tauri.app/s
 - **The tracker never decides what counts.** It sends raw finished jobs; the API validates them (TruckersMP membership, plausible speed/distance) and computes ranks and goals.
 - **Shared types:** job payloads the tracker sends are defined once (Zod in TS, serde in Rust) and must match. If you change `FinishedJob` in `crates/telemetry/src/tracker.rs`, change the Zod schema too.
 - **Game telemetry is Windows-only** (shared memory from the RenCloud scs-sdk-plugin). On macOS, build and test with the replay source and `crates/telemetry/tests/fixtures/*.jsonl`.
+- **The plugin version is pinned:** revision 12, release V.1.12.1. The memory layout changes between plugin revisions; `crates/telemetry/src/scs.rs` holds the offsets and says how they were checked. Ship that DLL and no other.
 - Use Bun, not npm or yarn.
+- **Env values are read at runtime, never baked into a build** (`@defaultDynamic` in `apps/web/.env.schema`): one image runs in every environment. Production values live only in the server's `/opt/tacho/.env` (`docs/DEPLOY.md`).
 
 ## Design work
 
@@ -53,14 +66,18 @@ npx skills@latest add emilkowalski/skills
 
 ## Next steps (in order)
 
-Done: Discord login + Steam OpenID link (`apps/web/src/lib/steam.ts`), Prisma schema (`packages/db/prisma/schema/platform.prisma`), company-scoping middleware (`companyProcedure` in `packages/api/src/index.ts`), tracker REST API (`apps/web/src/routes/api/tracker/*`, logic in `packages/api/src/tracker.ts`) with device-code pairing and hashed device tokens, Zod payloads in `packages/telemetry-types` (Rust mirror: `crates/telemetry/src/upload.rs`, both tested against `tests/fixtures/job-upload.json`). Tracker app: linking, token + offline queue (`src-tauri/src/store.rs`), uploads and positions (`src-tauri/src/tracking.rs`), dev replay through the real pipeline. First job saved end to end via replay on 2026-11-12.
+Done: Discord login + Steam OpenID link (`apps/web/src/lib/steam.ts`), Prisma schema (`packages/db/prisma/schema/platform.prisma`), company-scoping middleware (`companyProcedure` in `packages/api/src/index.ts`), tracker REST API (`apps/web/src/routes/api/tracker/*`, logic in `packages/api/src/tracker.ts`) with device-code pairing and hashed device tokens, Zod payloads in `packages/telemetry-types` (Rust mirror: `crates/telemetry/src/upload.rs`, both tested against `tests/fixtures/job-upload.json`). Tracker app: linking, token + offline queue (`src-tauri/src/store.rs`), uploads and positions (`src-tauri/src/tracking.rs`), dev replay through the real pipeline. First job saved end to end via replay on 2026-11-12. Live game source: `SharedMemorySource` (`crates/telemetry/src/source.rs`, decoding in `scs.rs`, Win32 calls in `win.rs`), with TruckersMP detection (`Frame.multiplayer`); tested against a stand-in memory map, not yet against the real game. Tracker shell: tray icon with a status line, close-to-tray, single instance, Start with Windows (`src-tauri/src/tray.rs`, `shell.rs`, `autostart.rs`); finding the games through Steam and one-click plugin install, with the pinned DLL shipped as a resource (`games.rs`, `plugin.rs`, `resources/scs-telemetry`). The install is tested against temporary folders, not yet in a real game folder.
+
+Website and API, built 2026-11-13 (logic in `packages/api/src/*.ts`, one router file per area in `packages/api/src/routers/`): company sign-up with TruckersMP ownership check (`/vtc/new`, `companies.ts`), public company page with recruitment form (`/vtc/<slug>`), company admin under `/vtc/<slug>/admin` (members, applications, ranks, goals, flagged jobs, settings), the nightly TruckersMP membership check (`membership-check.ts`, `bun run membership:check`), public leaderboards (`/leaderboards`), the live map over a WebSocket (`/map`, `live.ts`), the new-driver steps on the dashboard, public driver profiles (`/driver/<id>`), the download page (`/download`), and job pages with fines, tolls, ferries and trains (`/jobs/<id>`; the tracker reads them from the plugin, `crates/telemetry/src/scs.rs`). Discord rank roles are kept in line through `rank_roles_sync` outbox rows (`rank-roles.ts`). `Company.settings` has one schema (`company-settings.ts`); change it only through `updateCompanySettings`. Deliveries and rank-ups are written to `OutboxEvent` in the same transaction as the job (`deliveries.ts`, payloads in `outbox.ts`); the Discord bot in `apps/bot` reads them (`bun run dev:bot`, needs `DISCORD_BOT_TOKEN`).
+
+Testing: `bun test` in a package. The API tests use their own database, `te-rebrand_test`, created on first run in the same Postgres (`packages/api/src/test-db.ts`). `bun run dev:session` prints a login cookie for scripted checks of logged-in pages; `bun src/dev-drive.ts` in `packages/db` puts the seeded drivers on the live map.
 
 Note: ETS2/ATS road distances are map-scaled (about 1:19 / 1:20), so odometer km per real hour is far above the speedometer. Plausibility checks must account for this (see `flagReasons`).
 
-1. `SharedMemorySource` in `crates/telemetry/src/source.rs` (Windows), pinned to one RenCloud plugin version.
-   Also set `Frame.multiplayer` (TruckersMP detection) there.
-2. Tray icon (the app should live in the system tray, window on click) and plugin install into each game's `bin/win_x64/plugins`.
-3. Website pages still to build in the new style: company page (`/vtc/<slug>`), live map, the new-driver dashboard state (all in Figma). Restyle the tracker app to match.
-4. TruckersMP membership check (nightly job + on join), then ranks, Discord bot, live map (WebSocket), goals.
+1. Check `SharedMemorySource` against the real game: install the plugin from the tracker (the setup card on Live job, or Settings, Games), accept the game's "SDK features" notice, run `cargo run -p te-telemetry --example watch`, and do one delivery in singleplayer and one on TruckersMP. Record one with `--record` as a fixture.
+2. Tracker releases: Tauri's signed updater (needs signing keys and a place to publish releases, neither exists yet) and a code-signed installer.
+3. Switch the Discord bot on with a real token and check it in a real server; it has only run against a fake Discord.
+4. Deploy for real: a server, domain and the GitHub `production` environment secrets (`docs/DEPLOY.md`). The production stack (`infra/`: compose, Caddy, migrations, backups, deploy over SSH from `.github/workflows/deploy.yml`) was built and run locally on 2026-11-13 but has not run on a server yet.
+5. Still open from the plan: a map tile source for `/map`, ownership transfer for companies, a released tracker installer for `/download` (`TRACKER_DOWNLOAD_URL`).
 
 Convoys/events: never stored by us, and only shown for VTCs that use Tacho (verified companies with a `truckersmpVtcId`). They come from TruckersMP via `packages/truckersmp` (logic in `packages/api/src/convoys.ts`): `/events` lists them, `/events/$eventId` shows one.
